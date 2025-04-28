@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+members = [
+    "milky_chess",
+]
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+
+[workspace.dependencies]
+milky_chess = { path = "milky_chess" }
+
+[workspace.lints.rust]
+rust_2018_idioms = "deny"
