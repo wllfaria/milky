@@ -97,7 +97,22 @@ impl Milky {
         }
     }
 
-    pub fn init_leaper_piece_attacks(&mut self) {
+    fn set_occupancies(index: u32, bits_in_mask: u32, mut attackers: BitBoard) -> BitBoard {
+        let mut occupancy = BitBoard::default();
+
+        for count in 0..bits_in_mask {
+            let square = Square::from_u64_unchecked(attackers.trailing_zeros() as u64);
+            attackers.clear_bit(square);
+
+            if index & (1 << count) != 0 {
+                occupancy.set_bit(square);
+            }
+        }
+
+        occupancy
+    }
+
+    fn init_leaper_piece_attacks(&mut self) {
         for square in 0..64 {
             let square = Square::from_u64_unchecked(square);
 
@@ -108,7 +123,7 @@ impl Milky {
         }
     }
 
-    pub fn compute_pawn_attacks(&self, side: Side, square: Square) -> BitBoard {
+    fn compute_pawn_attacks(&self, side: Side, square: Square) -> BitBoard {
         let bitboard = BitBoard::from_square(square);
 
         match side {
@@ -147,6 +162,135 @@ impl Milky {
         attacks |= bitboard >> 1 & EMPTY_H_FILE;
 
         attacks
+    }
+
+    fn compute_bishop_attacks(&self, square: Square, blockers: BitBoard) -> BitBoard {
+        let mut attacks = BitBoard::default();
+
+        let directions = [
+            (1, 1),   // NE
+            (-1, 1),  // SE
+            (1, -1),  // NW
+            (-1, -1), // SW
+        ];
+
+        let rank = square as i8 / 8;
+        let file = square as i8 % 8;
+
+        for (rank_dir, file_dir) in directions {
+            let mut r = rank + rank_dir;
+            let mut f = file + file_dir;
+
+            while (0..8).contains(&r) && (0..8).contains(&f) {
+                let index = (r * 8 + f) as u64;
+                let square = Square::from_u64_unchecked(index);
+                attacks.set_bit(square);
+
+                if !(BitBoard::from_square(square) & blockers).is_empty() {
+                    break;
+                }
+
+                r += rank_dir;
+                f += file_dir;
+            }
+        }
+
+        attacks
+    }
+
+    fn compute_rook_attacks(&self, square: Square, blockers: BitBoard) -> BitBoard {
+        let mut attacks = BitBoard::default();
+
+        let directions = [
+            (0, 1),  // N
+            (1, 0),  // E
+            (-1, 0), // W
+            (0, -1), // S
+        ];
+
+        let rank = square as i8 / 8;
+        let file = square as i8 % 8;
+
+        for (rank_dir, file_dir) in directions {
+            let mut r = rank + rank_dir;
+            let mut f = file + file_dir;
+
+            while (0..8).contains(&r) && (0..8).contains(&f) {
+                let index = (r * 8 + f) as u64;
+                let square = Square::from_u64_unchecked(index);
+                attacks.set_bit(square);
+
+                if !(BitBoard::from_square(square) & blockers).is_empty() {
+                    break;
+                }
+
+                r += rank_dir;
+                f += file_dir;
+            }
+        }
+
+        attacks
+    }
+
+    fn compute_bishop_blockers(&self, square: Square) -> BitBoard {
+        let mut blockers = BitBoard::default();
+
+        let directions = [
+            (1, 1),   // NE
+            (-1, 1),  // SE
+            (1, -1),  // NW
+            (-1, -1), // SW
+        ];
+
+        let rank = square as i8 / 8;
+        let file = square as i8 % 8;
+
+        for (rank_dir, file_dir) in directions {
+            let mut r = rank + rank_dir;
+            let mut f = file + file_dir;
+
+            while (1..7).contains(&r) && (1..7).contains(&f) {
+                let index = (r * 8 + f) as u64;
+                blockers.set_bit(Square::from_u64_unchecked(index));
+                r += rank_dir;
+                f += file_dir;
+            }
+        }
+
+        blockers
+    }
+
+    fn compute_rook_blockers(&self, square: Square) -> BitBoard {
+        let mut blockers = BitBoard::default();
+
+        let directions = [
+            (0, 1),  // N
+            (1, 0),  // E
+            (-1, 0), // W
+            (0, -1), // S
+        ];
+
+        let rank = square as i8 / 8;
+        let file = square as i8 % 8;
+
+        for (rank_dir, file_dir) in directions {
+            let mut r = rank + rank_dir;
+            let mut f = file + file_dir;
+
+            while (0..8).contains(&r) && (0..8).contains(&f) {
+                // if either direction moved at least once, skip the edges this ensure we generate
+                // the moves for cornered rooks
+                if (rank_dir != 0 && (r == 0 || r == 7)) || (file_dir != 0 && (f == 0 || f == 7)) {
+                    break;
+                }
+                let index = (r * 8 + f) as u64;
+                blockers.set_bit(Square::from_u64_unchecked(index));
+                r += rank_dir;
+                f += file_dir;
+            }
+        }
+
+        blockers
     }
 }
 
@@ -246,6 +390,97 @@ mod tests {
         let attacks = engine.compute_king_attacks(Square::A4);
         let expected =
             bitboard_from_squares(&[Square::A3, Square::A5, Square::B5, Square::B4, Square::B3]);
+        assert_eq!(attacks, expected);
+    }
+
+    #[test]
+    fn test_rook_blockers_center() {
+        let engine = Milky::new();
+        let blockers = engine.compute_rook_blockers(Square::D4);
+        let expected = bitboard_from_squares(&[
+            // vertical (excluding edges)
+            Square::D3,
+            Square::D2,
+            Square::D5,
+            Square::D6,
+            Square::D7,
+            // horizontal (excluding edges)
+            Square::C4,
+            Square::B4,
+            Square::E4,
+            Square::F4,
+            Square::G4,
+        ]);
+        assert_eq!(blockers, expected);
+    }
+
+    #[test]
+    fn test_bishop_blockers_center() {
+        let engine = Milky::new();
+        let blockers = engine.compute_bishop_blockers(Square::D4);
+        let expected = bitboard_from_squares(&[
+            // NE
+            Square::E5,
+            Square::F6,
+            Square::G7,
+            // NW
+            Square::C5,
+            Square::B6,
+            // SE
+            Square::E3,
+            Square::F2,
+            // SW
+            Square::C3,
+            Square::B2,
+        ]);
+        assert_eq!(blockers, expected);
+    }
+
+    #[test]
+    fn test_rook_attacks_with_blockers() {
+        let engine = Milky::new();
+        let blockers = bitboard_from_squares(&[Square::D6, Square::F4, Square::F3]);
+        let attacks = engine.compute_rook_attacks(Square::D4, blockers);
+        let expected = bitboard_from_squares(&[
+            // up to D6 (stop at blocker)
+            Square::D5,
+            Square::D6,
+            // all the way down
+            Square::D3,
+            Square::D2,
+            Square::D1,
+            // all the way to the left
+            Square::C4,
+            Square::B4,
+            Square::A4,
+            // right to F4 (stop at first blocker)
+            Square::E4,
+            Square::F4,
+        ]);
+        assert_eq!(attacks, expected);
+    }
+
+    #[test]
+    fn test_bishop_attacks_with_blockers() {
+        let engine = Milky::new();
+        let blockers = bitboard_from_squares(&[Square::F6, Square::B2]);
+        let attacks = engine.compute_bishop_attacks(Square::D4, blockers);
+        let expected = bitboard_from_squares(&[
+            // NE to F6 (stop at blocker)
+            Square::E5,
+            Square::F6,
+            // NW until the edge
+            Square::C5,
+            Square::B6,
+            Square::A7,
+            // SE until the edge
+            Square::E3,
+            Square::F2,
+            Square::G1,
+            // SW to B2 (stop at blocker)
+            Square::C3,
+            Square::B2,
+        ]);
         assert_eq!(attacks, expected);
     }
 }
