@@ -131,3 +131,4 @@ impl_bit_ops!(BitOr,  bitor,  |);
 impl_bit_ops!(BitXor, bitxor, ^);
 impl_bit_ops!(Shl,    shl,    <<);
 impl_bit_ops!(Shr,    shr,    >>);
+impl_bit_ops!(Mul,    mul,    *);
