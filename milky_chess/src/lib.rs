@@ -1,39 +1,19 @@
-use bitboard::BitBoard;
+use std::sync::OnceLock;
+
+use bitboard::{BitBoard, Side, Square};
 use random::Random;
 
 mod bitboard;
 mod random;
 
-#[rustfmt::skip]
-#[repr(u64)]
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
-pub enum Square {
-    A8, B8, C8, D8, E8, F8, G8, H8,
-    A7, B7, C7, D7, E7, F7, G7, H7,
-    A6, B6, C6, D6, E6, F6, G6, H6,
-    A5, B5, C5, D5, E5, F5, G5, H5,
-    A4, B4, C4, D4, E4, F4, G4, H4,
-    A3, B3, C3, D3, E3, F3, G3, H3,
-    A2, B2, C2, D2, E2, F2, G2, H2,
-    A1, B1, C1, D1, E1, F1, G1, H1,
-}
+static PAWN_ATTACKS: OnceLock<[[BitBoard; 64]; 2]> = OnceLock::new();
+static KNIGHT_ATTACKS: OnceLock<[BitBoard; 64]> = OnceLock::new();
+static KING_ATTACKS: OnceLock<[BitBoard; 64]> = OnceLock::new();
+static BISHOP_ATTACKS: OnceLock<Box<[[BitBoard; 512]]>> = OnceLock::new();
+static ROOK_ATTACKS: OnceLock<Box<[[BitBoard; 4096]]>> = OnceLock::new();
 
-impl Square {
-    /// SAFETY: `value` must always be 0..=63
-    #[inline]
-    pub fn from_u64_unchecked(value: u64) -> Self {
-        unsafe { std::mem::transmute(value) }
-    }
-}
-
-impl std::ops::Shl<Square> for u64 {
-    type Output = u64;
-
-    #[inline]
-    fn shl(self, rhs: Square) -> Self::Output {
-        self << rhs as u64
-    }
-}
+static BISHOP_BLOCKERS: OnceLock<[BitBoard; 64]> = OnceLock::new();
+static ROOK_BLOCKERS: OnceLock<[BitBoard; 64]> = OnceLock::new();
 
 /// Every bit is set except for the bits on the A file
 static EMPTY_A_FILE: BitBoard = BitBoard::new(0xFEFEFEFEFEFEFEFE);
@@ -59,6 +39,7 @@ static BISHOP_RELEVANT_OCCUPANCIES: [u32; 64] = [
     6, 5, 5, 5, 5, 5, 5, 6,
 ];
 
+/// Magic numbers used for bishop magic bitboard indexing.
 static BISHOP_MAGIC_BITBOARDS: [BitBoard; 64] = [
     BitBoard::new(0x40040844404084),
     BitBoard::new(0x2004208A004208),
@@ -205,88 +186,362 @@ static ROOK_MAGIC_BITBOARDS: [BitBoard; 64] = [
     BitBoard::new(0x1004081002402),
 ];
 
+pub fn init_attack_tables() {
+    init_leaper_piece_attacks();
+    init_slider_piece_attacks(SliderPieceKind::Bishop);
+    init_slider_piece_attacks(SliderPieceKind::Rook);
+}
+
+fn init_leaper_piece_attacks() {
+    let mut pawn_attacks = [[BitBoard::default(); 64]; 2];
+    let mut knight_attacks = [BitBoard::default(); 64];
+    let mut king_attacks = [BitBoard::default(); 64];
+
+    for square in 0..64 {
+        let square = Square::from_u64_unchecked(square);
+
+        pawn_attacks[Side::White][square] = compute_pawn_attacks(Side::White, square);
+        pawn_attacks[Side::Black][square] = compute_pawn_attacks(Side::Black, square);
+        knight_attacks[square] = compute_knight_attacks(square);
+        king_attacks[square] = compute_king_attacks(square);
+    }
+
+    PAWN_ATTACKS.get_or_init(|| pawn_attacks);
+    KNIGHT_ATTACKS.get_or_init(|| knight_attacks);
+    KING_ATTACKS.get_or_init(|| king_attacks);
+}
+
+fn init_slider_piece_attacks(kind: SliderPieceKind) {
+    let mut bishop_blockers = [BitBoard::default(); 64];
+    let mut rook_blockers = [BitBoard::default(); 64];
+
+    let mut bishop_attacks = vec![[BitBoard::default(); 512]; 64].into_boxed_slice();
+    let mut rook_attacks = vec![[BitBoard::default(); 4096]; 64].into_boxed_slice();
+
+    for index in 0..64 {
+        let square = Square::from_u64_unchecked(index);
+        bishop_blockers[index as usize] = compute_bishop_blockers(square);
+        rook_blockers[index as usize] = compute_rook_blockers(square);
+
+        let blockers = match kind {
+            SliderPieceKind::Bishop => bishop_blockers[index as usize],
+            SliderPieceKind::Rook => rook_blockers[index as usize],
+        };
+
+        let relevant_bits = blockers.count_ones();
+        let occupancy_variations = 1 << relevant_bits;
+
+        for occ_idx in 0..occupancy_variations {
+            let occupancy = set_occupancy(occ_idx, relevant_bits, blockers);
+
+            let magic_index = match kind {
+                SliderPieceKind::Bishop => {
+                    let magic = occupancy.wrapping_mul(*BISHOP_MAGIC_BITBOARDS[index as usize]);
+                    let shift = 64 - BISHOP_RELEVANT_OCCUPANCIES[index as usize] as u64;
+                    magic >> shift
+                }
+                SliderPieceKind::Rook => {
+                    let magic = occupancy.wrapping_mul(*ROOK_MAGIC_BITBOARDS[index as usize]);
+                    let shift = 64 - ROOK_RELEVANT_OCCUPANCIES[index as usize] as u64;
+                    magic >> shift
+                }
+            };
+
+            match kind {
+                SliderPieceKind::Bishop => {
+                    bishop_attacks[square as usize][magic_index as usize] =
+                        compute_bishop_attacks(square, occupancy);
+                }
+                SliderPieceKind::Rook => {
+                    rook_attacks[square as usize][magic_index as usize] =
+                        compute_rook_attacks(square, occupancy);
+                }
+            }
+        }
+    }
+
+    match kind {
+        SliderPieceKind::Bishop => {
+            BISHOP_BLOCKERS.get_or_init(|| bishop_blockers);
+            BISHOP_ATTACKS.get_or_init(|| bishop_attacks);
+        }
+        SliderPieceKind::Rook => {
+            ROOK_BLOCKERS.get_or_init(|| rook_blockers);
+            ROOK_ATTACKS.get_or_init(|| rook_attacks);
+        }
+    }
+}
+
+fn compute_pawn_attacks(side: Side, square: Square) -> BitBoard {
+    let bitboard = BitBoard::from_square(square);
+
+    match side {
+        Side::White => ((bitboard >> 7) & EMPTY_A_FILE) | ((bitboard >> 9) & EMPTY_H_FILE),
+        Side::Black => ((bitboard << 7) & EMPTY_H_FILE) | ((bitboard << 9) & EMPTY_A_FILE),
+        _ => unreachable!(),
+    }
+}
+
+fn compute_knight_attacks(square: Square) -> BitBoard {
+    let mut attacks = BitBoard::default();
+    let bitboard = BitBoard::from_square(square);
+
+    attacks |= (bitboard >> 17) & EMPTY_H_FILE; // two up, one left (north north west)
+    attacks |= (bitboard >> 15) & EMPTY_A_FILE; // two up, one right (north north east)
+    attacks |= (bitboard >> 10) & EMPTY_GH_FILE; // one up, two left (west nort west)
+    attacks |= (bitboard >> 6) & EMPTY_AB_FILE; // one up, two right (east north east)
+    attacks |= (bitboard << 17) & EMPTY_A_FILE; // one down, two left (west south west)
+    attacks |= (bitboard << 15) & EMPTY_H_FILE; // one down, two right (east south east)
+    attacks |= (bitboard << 10) & EMPTY_AB_FILE; // two down, one left (south south west)
+    attacks |= (bitboard << 6) & EMPTY_GH_FILE; // two down, one right (south south east)
+
+    attacks
+}
+
+fn compute_king_attacks(square: Square) -> BitBoard {
+    let mut attacks = BitBoard::default();
+    let bitboard = BitBoard::from_square(square);
+
+    attacks |= (bitboard >> 7) & EMPTY_A_FILE;
+    attacks |= bitboard >> 8;
+    attacks |= (bitboard >> 9) & EMPTY_H_FILE;
+    attacks |= (bitboard << 7) & EMPTY_H_FILE;
+    attacks |= bitboard << 8;
+    attacks |= (bitboard << 9) & EMPTY_A_FILE;
+    attacks |= bitboard << 1 & EMPTY_A_FILE;
+    attacks |= bitboard >> 1 & EMPTY_H_FILE;
+
+    attacks
+}
+
+fn compute_bishop_attacks(square: Square, blockers: BitBoard) -> BitBoard {
+    let mut attacks = BitBoard::default();
+
+    let directions = [
+        (1, 1),   // NE
+        (-1, 1),  // SE
+        (1, -1),  // NW
+        (-1, -1), // SW
+    ];
+
+    let rank = square as i8 / 8;
+    let file = square as i8 % 8;
+
+    for (rank_dir, file_dir) in directions {
+        let mut r = rank + rank_dir;
+        let mut f = file + file_dir;
+
+        while (0..8).contains(&r) && (0..8).contains(&f) {
+            let index = (r * 8 + f) as u64;
+            let square = Square::from_u64_unchecked(index);
+            attacks.set_bit(square);
+
+            if !(BitBoard::from_square(square) & blockers).is_empty() {
+                break;
+            }
+
+            r += rank_dir;
+            f += file_dir;
+        }
+    }
+
+    attacks
+}
+
+fn compute_rook_attacks(square: Square, blockers: BitBoard) -> BitBoard {
+    let mut attacks = BitBoard::default();
+
+    let directions = [
+        (0, 1),  // N
+        (1, 0),  // E
+        (-1, 0), // W
+        (0, -1), // S
+    ];
+
+    let rank = square as i8 / 8;
+    let file = square as i8 % 8;
+
+    for (rank_dir, file_dir) in directions {
+        let mut r = rank + rank_dir;
+        let mut f = file + file_dir;
+
+        while (0..8).contains(&r) && (0..8).contains(&f) {
+            let index = (r * 8 + f) as u64;
+            let square = Square::from_u64_unchecked(index);
+            attacks.set_bit(square);
+
+            if !(BitBoard::from_square(square) & blockers).is_empty() {
+                break;
+            }
+
+            r += rank_dir;
+            f += file_dir;
+        }
+    }
+
+    attacks
+}
+
+fn compute_bishop_blockers(square: Square) -> BitBoard {
+    let mut blockers = BitBoard::default();
+
+    let directions = [
+        (1, 1),   // NE
+        (-1, 1),  // SE
+        (1, -1),  // NW
+        (-1, -1), // SW
+    ];
+
+    let rank = square as i8 / 8;
+    let file = square as i8 % 8;
+
+    for (rank_dir, file_dir) in directions {
+        let mut r = rank + rank_dir;
+        let mut f = file + file_dir;
+
+        while (1..7).contains(&r) && (1..7).contains(&f) {
+            let index = (r * 8 + f) as u64;
+            blockers.set_bit(Square::from_u64_unchecked(index));
+            r += rank_dir;
+            f += file_dir;
+        }
+    }
+
+    blockers
+}
+
+fn compute_rook_blockers(square: Square) -> BitBoard {
+    let mut blockers = BitBoard::default();
+
+    let directions = [
+        (0, 1),  // N
+        (1, 0),  // E
+        (-1, 0), // W
+        (0, -1), // S
+    ];
+
+    let rank = square as i8 / 8;
+    let file = square as i8 % 8;
+
+    for (rank_dir, file_dir) in directions {
+        let mut r = rank + rank_dir;
+        let mut f = file + file_dir;
+
+        while (0..8).contains(&r) && (0..8).contains(&f) {
+            // if either direction moved at least once, skip the edges this ensure we generate
+            // the moves for cornered rooks
+            if (rank_dir != 0 && (r == 0 || r == 7)) || (file_dir != 0 && (f == 0 || f == 7)) {
+                break;
+            }
+            let index = (r * 8 + f) as u64;
+            blockers.set_bit(Square::from_u64_unchecked(index));
+            r += rank_dir;
+            f += file_dir;
+        }
+    }
+
+    blockers
+}
+
+fn set_occupancy(index: usize, bits_in_mask: u32, mut attackers: BitBoard) -> BitBoard {
+    let mut occupancy = BitBoard::default();
+
+    for count in 0..bits_in_mask {
+        let square = Square::from_u64_unchecked(attackers.trailing_zeros() as u64);
+        attackers.clear_bit(square);
+
+        if index & (1 << count) != 0 {
+            occupancy.set_bit(square);
+        }
+    }
+
+    occupancy
+}
+
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
-pub enum Side {
-    White,
-    Black,
-}
-
-impl std::ops::Index<Square> for [BitBoard; 64] {
-    type Output = BitBoard;
-
-    #[inline]
-    fn index(&self, index: Square) -> &Self::Output {
-        &self[index as usize]
-    }
-}
-
-impl std::ops::IndexMut<Square> for [BitBoard; 64] {
-    fn index_mut(&mut self, index: Square) -> &mut Self::Output {
-        &mut self[index as usize]
-    }
-}
-
-impl<const SIZE: usize> std::ops::Index<Side> for [[BitBoard; SIZE]; 2] {
-    type Output = [BitBoard; SIZE];
-
-    #[inline]
-    fn index(&self, index: Side) -> &Self::Output {
-        &self[index as usize]
-    }
-}
-
-impl<const SIZE: usize> std::ops::IndexMut<Side> for [[BitBoard; SIZE]; 2] {
-    fn index_mut(&mut self, index: Side) -> &mut Self::Output {
-        &mut self[index as usize]
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
-enum MagicPieceKind {
+enum SliderPieceKind {
     Rook,
     Bishop,
 }
 
+bitflags::bitflags! {
+    /// ┌──────┬─────┬─────────────────────────────┐
+    /// │ bin  │ dec │ description                 │
+    /// ├──────┼─────┼─────────────────────────────┤
+    /// │ 0001 │  1  │ White can castle king side  │
+    /// ├──────┼─────┼─────────────────────────────┤
+    /// │ 0010 │  2  │ White can castle queen side │
+    /// ├──────┼─────┼─────────────────────────────┤
+    /// │ 0100 │  4  │ Black can castle king side  │
+    /// ├──────┼─────┼─────────────────────────────┤
+    /// │ 1000 │  8  │ Black can castle queen side │
+    /// └──────┴─────┴─────────────────────────────┘
+    #[repr(transparent)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+    pub struct CastlingRights: u8 {
+        const NO_SIDE = 0b0000;
+        const WHITE_K = 0b0001;
+        const WHITE_Q = 0b0010;
+        const BLACK_K = 0b0100;
+        const BLACK_Q = 0b1000;
+        const ALL     = 0b1111;
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+enum Boards {
+    WhitePawns,
+    WhiteKnights,
+    WhiteBishops,
+    WhiteRooks,
+    WhiteQueens,
+    WhiteKing,
+    BlackPawns,
+    BlackKnights,
+    BlackBishops,
+    BlackRooks,
+    BlackQueens,
+    BlackKing,
+}
+
 #[derive(Debug)]
 struct Milky {
-    pawn_attacks: [[BitBoard; 64]; 2],
-    knight_attacks: [BitBoard; 64],
-    king_attacks: [BitBoard; 64],
-    bishop_attacks: [BitBoard; 64],
-    rook_attacks: [BitBoard; 64],
     rng: Random,
+    boards: [BitBoard; 12],
+    occupancies: [BitBoard; 3],
+    side_to_move: Side,
+    en_passant: Square,
+    castling_rights: CastlingRights,
 }
 
 impl Milky {
     pub fn new() -> Self {
         Self {
-            pawn_attacks: [[BitBoard::default(); 64]; 2],
-            knight_attacks: [BitBoard::default(); 64],
-            king_attacks: [BitBoard::default(); 64],
-            bishop_attacks: [BitBoard::default(); 64],
-            rook_attacks: [BitBoard::default(); 64],
             rng: Random::default(),
+            boards: [BitBoard::empty(); 12],
+            occupancies: [BitBoard::empty(); 3],
+            side_to_move: Side::White,
+            en_passant: Square::NoSquare,
+            castling_rights: CastlingRights::ALL,
         }
     }
 
-    fn set_occupancies(
-        &mut self,
-        index: usize,
-        bits_in_mask: u32,
-        mut attackers: BitBoard,
-    ) -> BitBoard {
-        let mut occupancy = BitBoard::default();
+    #[inline]
+    fn get_bishop_attacks(&self, square: Square, mut occupancy: BitBoard) -> BitBoard {
+        occupancy &= BISHOP_BLOCKERS.get().unwrap()[square];
+        occupancy *= BISHOP_MAGIC_BITBOARDS[square];
+        occupancy >>= (64 - BISHOP_RELEVANT_OCCUPANCIES[square as usize]) as u64;
 
-        for count in 0..bits_in_mask {
-            let square = Square::from_u64_unchecked(attackers.trailing_zeros() as u64);
-            attackers.clear_bit(square);
+        BISHOP_ATTACKS.get().unwrap()[square as usize][*occupancy as usize]
+    }
 
-            if index & (1 << count) != 0 {
-                occupancy.set_bit(square);
-            }
-        }
+    #[inline]
+    fn get_rook_attacks(&self, square: Square, mut occupancy: BitBoard) -> BitBoard {
+        occupancy &= ROOK_BLOCKERS.get().unwrap()[square];
+        occupancy *= ROOK_MAGIC_BITBOARDS[square];
+        occupancy >>= (64 - ROOK_RELEVANT_OCCUPANCIES[square as usize]) as u64;
 
-        occupancy
+        ROOK_ATTACKS.get().unwrap()[square as usize][*occupancy as usize]
     }
 
     fn init_magic_numbers(&mut self) {
@@ -295,7 +550,7 @@ impl Milky {
             let rook_magic = self.find_magic_number(
                 square,
                 ROOK_RELEVANT_OCCUPANCIES[square as usize],
-                MagicPieceKind::Rook,
+                SliderPieceKind::Rook,
             );
             println!("0x{rook_magic:X},");
         }
@@ -308,216 +563,35 @@ impl Milky {
             let bishop_magic = self.find_magic_number(
                 square,
                 BISHOP_RELEVANT_OCCUPANCIES[square as usize],
-                MagicPieceKind::Bishop,
+                SliderPieceKind::Bishop,
             );
             println!("0x{bishop_magic:X},");
         }
-    }
-
-    fn init_leaper_piece_attacks(&mut self) {
-        for square in 0..64 {
-            let square = Square::from_u64_unchecked(square);
-
-            self.pawn_attacks[Side::White][square] = self.compute_pawn_attacks(Side::White, square);
-            self.pawn_attacks[Side::Black][square] = self.compute_pawn_attacks(Side::Black, square);
-            self.knight_attacks[square] = self.compute_knight_attacks(square);
-            self.king_attacks[square] = self.compute_king_attacks(square);
-        }
-    }
-
-    fn compute_pawn_attacks(&self, side: Side, square: Square) -> BitBoard {
-        let bitboard = BitBoard::from_square(square);
-
-        match side {
-            Side::White => ((bitboard >> 7) & EMPTY_A_FILE) | ((bitboard >> 9) & EMPTY_H_FILE),
-            Side::Black => ((bitboard << 7) & EMPTY_H_FILE) | ((bitboard << 9) & EMPTY_A_FILE),
-        }
-    }
-
-    fn compute_knight_attacks(&self, square: Square) -> BitBoard {
-        let mut attacks = BitBoard::default();
-        let bitboard = BitBoard::from_square(square);
-
-        attacks |= (bitboard >> 17) & EMPTY_H_FILE; // two up, one left (north north west)
-        attacks |= (bitboard >> 15) & EMPTY_A_FILE; // two up, one right (north north east)
-        attacks |= (bitboard >> 10) & EMPTY_GH_FILE; // one up, two left (west nort west)
-        attacks |= (bitboard >> 6) & EMPTY_AB_FILE; // one up, two right (east north east)
-        attacks |= (bitboard << 17) & EMPTY_A_FILE; // one down, two left (west south west)
-        attacks |= (bitboard << 15) & EMPTY_H_FILE; // one down, two right (east south east)
-        attacks |= (bitboard << 10) & EMPTY_AB_FILE; // two down, one left (south south west)
-        attacks |= (bitboard << 6) & EMPTY_GH_FILE; // two down, one right (south south east)
-
-        attacks
-    }
-
-    fn compute_king_attacks(&self, square: Square) -> BitBoard {
-        let mut attacks = BitBoard::default();
-        let bitboard = BitBoard::from_square(square);
-
-        attacks |= (bitboard >> 7) & EMPTY_A_FILE;
-        attacks |= bitboard >> 8;
-        attacks |= (bitboard >> 9) & EMPTY_H_FILE;
-        attacks |= (bitboard << 7) & EMPTY_H_FILE;
-        attacks |= bitboard << 8;
-        attacks |= (bitboard << 9) & EMPTY_A_FILE;
-        attacks |= bitboard << 1 & EMPTY_A_FILE;
-        attacks |= bitboard >> 1 & EMPTY_H_FILE;
-
-        attacks
-    }
-
-    fn compute_bishop_attacks(&self, square: Square, blockers: BitBoard) -> BitBoard {
-        let mut attacks = BitBoard::default();
-
-        let directions = [
-            (1, 1),   // NE
-            (-1, 1),  // SE
-            (1, -1),  // NW
-            (-1, -1), // SW
-        ];
-
-        let rank = square as i8 / 8;
-        let file = square as i8 % 8;
-
-        for (rank_dir, file_dir) in directions {
-            let mut r = rank + rank_dir;
-            let mut f = file + file_dir;
-
-            while (0..8).contains(&r) && (0..8).contains(&f) {
-                let index = (r * 8 + f) as u64;
-                let square = Square::from_u64_unchecked(index);
-                attacks.set_bit(square);
-
-                if !(BitBoard::from_square(square) & blockers).is_empty() {
-                    break;
-                }
-
-                r += rank_dir;
-                f += file_dir;
-            }
-        }
-
-        attacks
-    }
-
-    fn compute_rook_attacks(&self, square: Square, blockers: BitBoard) -> BitBoard {
-        let mut attacks = BitBoard::default();
-
-        let directions = [
-            (0, 1),  // N
-            (1, 0),  // E
-            (-1, 0), // W
-            (0, -1), // S
-        ];
-
-        let rank = square as i8 / 8;
-        let file = square as i8 % 8;
-
-        for (rank_dir, file_dir) in directions {
-            let mut r = rank + rank_dir;
-            let mut f = file + file_dir;
-
-            while (0..8).contains(&r) && (0..8).contains(&f) {
-                let index = (r * 8 + f) as u64;
-                let square = Square::from_u64_unchecked(index);
-                attacks.set_bit(square);
-
-                if !(BitBoard::from_square(square) & blockers).is_empty() {
-                    break;
-                }
-
-                r += rank_dir;
-                f += file_dir;
-            }
-        }
-
-        attacks
-    }
-
-    fn compute_bishop_blockers(&self, square: Square) -> BitBoard {
-        let mut blockers = BitBoard::default();
-
-        let directions = [
-            (1, 1),   // NE
-            (-1, 1),  // SE
-            (1, -1),  // NW
-            (-1, -1), // SW
-        ];
-
-        let rank = square as i8 / 8;
-        let file = square as i8 % 8;
-
-        for (rank_dir, file_dir) in directions {
-            let mut r = rank + rank_dir;
-            let mut f = file + file_dir;
-
-            while (1..7).contains(&r) && (1..7).contains(&f) {
-                let index = (r * 8 + f) as u64;
-                blockers.set_bit(Square::from_u64_unchecked(index));
-                r += rank_dir;
-                f += file_dir;
-            }
-        }
-
-        blockers
-    }
-
-    fn compute_rook_blockers(&self, square: Square) -> BitBoard {
-        let mut blockers = BitBoard::default();
-
-        let directions = [
-            (0, 1),  // N
-            (1, 0),  // E
-            (-1, 0), // W
-            (0, -1), // S
-        ];
-
-        let rank = square as i8 / 8;
-        let file = square as i8 % 8;
-
-        for (rank_dir, file_dir) in directions {
-            let mut r = rank + rank_dir;
-            let mut f = file + file_dir;
-
-            while (0..8).contains(&r) && (0..8).contains(&f) {
-                // if either direction moved at least once, skip the edges this ensure we generate
-                // the moves for cornered rooks
-                if (rank_dir != 0 && (r == 0 || r == 7)) || (file_dir != 0 && (f == 0 || f == 7)) {
-                    break;
-                }
-                let index = (r * 8 + f) as u64;
-                blockers.set_bit(Square::from_u64_unchecked(index));
-                r += rank_dir;
-                f += file_dir;
-            }
-        }
-
-        blockers
     }
 
     fn find_magic_number(
         &mut self,
         square: Square,
         relevant_bits: u32,
-        kind: MagicPieceKind,
+        kind: SliderPieceKind,
     ) -> u64 {
         let mut occupancies = [BitBoard::default(); 4096];
         let mut attacks = [BitBoard::default(); 4096];
         let mut used_attacks = [BitBoard::default(); 4096];
 
         let blockers = match kind {
-            MagicPieceKind::Rook => self.compute_rook_blockers(square),
-            MagicPieceKind::Bishop => self.compute_bishop_blockers(square),
+            SliderPieceKind::Rook => compute_rook_blockers(square),
+            SliderPieceKind::Bishop => compute_bishop_blockers(square),
         };
 
         let occupancy_idx = 1 << relevant_bits;
 
         for index in 0..occupancy_idx {
-            occupancies[index] = self.set_occupancies(index, relevant_bits, blockers);
+            occupancies[index] = set_occupancy(index, relevant_bits, blockers);
 
             attacks[index] = match kind {
-                MagicPieceKind::Rook => self.compute_rook_attacks(square, occupancies[index]),
-                MagicPieceKind::Bishop => self.compute_bishop_attacks(square, occupancies[index]),
+                SliderPieceKind::Rook => compute_rook_attacks(square, occupancies[index]),
+                SliderPieceKind::Bishop => compute_bishop_attacks(square, occupancies[index]),
             }
         }
 
@@ -553,33 +627,25 @@ impl Milky {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test() {
-        let mut engine = Milky::new();
-
-        // engine.init_magic_numbers();
-
-        // for rank in 0..8 {
-        //     for file in 0..8 {
-        //         let square = Square::from_u64_unchecked(rank * 8 + file);
-        //         print!(" {},", engine.compute_rook_blockers(square).count_ones());
-        //     }
-        //     println!();
-        // }
-
-        // let mut rng = crate::random::Random::new();
-        // println!("{}", BitBoard::new(rng.gen_u32() as u64));
-        // println!("{}", BitBoard::new(rng.gen_u32() as u64) & 0xFFFF);
-        // println!("{}", BitBoard::new(rng.gen_u64()));
-        // println!(
-        //     "{}",
-        //     BitBoard::new(rng.gen_u64())
-        //         & BitBoard::new(rng.gen_u64())
-        //         & BitBoard::new(rng.gen_u64())
-        // );
-
-        panic!();
-    }
+    // #[test]
+    // fn test() {
+    //     init_attack_tables();
+    //     let mut occupancy = BitBoard::default();
+    //     occupancy.set_bit(Square::C5);
+    //     occupancy.set_bit(Square::F2);
+    //     occupancy.set_bit(Square::G7);
+    //     occupancy.set_bit(Square::B2);
+    //     occupancy.set_bit(Square::G5);
+    //     occupancy.set_bit(Square::E2);
+    //     occupancy.set_bit(Square::E7);
+    //
+    //     let engine = Milky::new();
+    //
+    //     println!("{}", engine.get_bishop_attacks(Square::D4, occupancy));
+    //     println!("{}", engine.get_rook_attacks(Square::E5, occupancy));
+    //
+    //     panic!();
+    // }
 
     fn bitboard_from_squares(squares: &[Square]) -> BitBoard {
         BitBoard::from(squares)
@@ -587,40 +653,35 @@ mod tests {
 
     #[test]
     fn test_white_pawn_attacks_center() {
-        let engine = Milky::new();
-        let attacks = engine.compute_pawn_attacks(Side::White, Square::D4);
+        let attacks = compute_pawn_attacks(Side::White, Square::D4);
         let expected = bitboard_from_squares(&[Square::C5, Square::E5]);
         assert_eq!(attacks, expected);
     }
 
     #[test]
     fn test_white_pawn_attacks_edge() {
-        let engine = Milky::new();
-        let attacks = engine.compute_pawn_attacks(Side::White, Square::A2);
+        let attacks = compute_pawn_attacks(Side::White, Square::A2);
         let expected = bitboard_from_squares(&[Square::B3]);
         assert_eq!(attacks, expected);
     }
 
     #[test]
     fn test_black_pawn_attacks_center() {
-        let engine = Milky::new();
-        let attacks = engine.compute_pawn_attacks(Side::Black, Square::D5);
+        let attacks = compute_pawn_attacks(Side::Black, Square::D5);
         let expected = bitboard_from_squares(&[Square::C4, Square::E4]);
         assert_eq!(attacks, expected);
     }
 
     #[test]
     fn test_black_pawn_attacks_edge() {
-        let engine = Milky::new();
-        let attacks = engine.compute_pawn_attacks(Side::Black, Square::H7);
+        let attacks = compute_pawn_attacks(Side::Black, Square::H7);
         let expected = bitboard_from_squares(&[Square::G6]);
         assert_eq!(attacks, expected);
     }
 
     #[test]
     fn test_knight_attacks_center() {
-        let engine = Milky::new();
-        let attacks = engine.compute_knight_attacks(Square::D4);
+        let attacks = compute_knight_attacks(Square::D4);
         let expected = bitboard_from_squares(&[
             Square::C6,
             Square::E6,
@@ -636,16 +697,14 @@ mod tests {
 
     #[test]
     fn test_knight_attacks_corner() {
-        let engine = Milky::new();
-        let attacks = engine.compute_knight_attacks(Square::A1);
+        let attacks = compute_knight_attacks(Square::A1);
         let expected = bitboard_from_squares(&[Square::B3, Square::C2]);
         assert_eq!(attacks, expected);
     }
 
     #[test]
     fn test_king_attacks_center() {
-        let engine = Milky::new();
-        let attacks = engine.compute_king_attacks(Square::D4);
+        let attacks = compute_king_attacks(Square::D4);
         let expected = bitboard_from_squares(&[
             Square::C5,
             Square::D5,
@@ -661,16 +720,14 @@ mod tests {
 
     #[test]
     fn test_king_attacks_corner() {
-        let engine = Milky::new();
-        let attacks = engine.compute_king_attacks(Square::A8);
+        let attacks = compute_king_attacks(Square::A8);
         let expected = bitboard_from_squares(&[Square::A7, Square::B7, Square::B8]);
         assert_eq!(attacks, expected);
     }
 
     #[test]
     fn test_king_attacks_edge() {
-        let engine = Milky::new();
-        let attacks = engine.compute_king_attacks(Square::A4);
+        let attacks = compute_king_attacks(Square::A4);
         let expected =
             bitboard_from_squares(&[Square::A3, Square::A5, Square::B5, Square::B4, Square::B3]);
         assert_eq!(attacks, expected);
@@ -678,8 +735,7 @@ mod tests {
 
     #[test]
     fn test_rook_blockers_center() {
-        let engine = Milky::new();
-        let blockers = engine.compute_rook_blockers(Square::D4);
+        let blockers = compute_rook_blockers(Square::D4);
         let expected = bitboard_from_squares(&[
             // vertical (excluding edges)
             Square::D3,
@@ -699,8 +755,7 @@ mod tests {
 
     #[test]
     fn test_bishop_blockers_center() {
-        let engine = Milky::new();
-        let blockers = engine.compute_bishop_blockers(Square::D4);
+        let blockers = compute_bishop_blockers(Square::D4);
         let expected = bitboard_from_squares(&[
             // NE
             Square::E5,
@@ -721,9 +776,8 @@ mod tests {
 
     #[test]
     fn test_rook_attacks_with_blockers() {
-        let engine = Milky::new();
         let blockers = bitboard_from_squares(&[Square::D6, Square::F4, Square::F3]);
-        let attacks = engine.compute_rook_attacks(Square::D4, blockers);
+        let attacks = compute_rook_attacks(Square::D4, blockers);
         let expected = bitboard_from_squares(&[
             // up to D6 (stop at blocker)
             Square::D5,
@@ -745,9 +799,8 @@ mod tests {
 
     #[test]
     fn test_bishop_attacks_with_blockers() {
-        let engine = Milky::new();
         let blockers = bitboard_from_squares(&[Square::F6, Square::B2]);
-        let attacks = engine.compute_bishop_attacks(Square::D4, blockers);
+        let attacks = compute_bishop_attacks(Square::D4, blockers);
         let expected = bitboard_from_squares(&[
             // NE to F6 (stop at blocker)
             Square::E5,
