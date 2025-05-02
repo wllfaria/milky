@@ -291,6 +291,11 @@ impl BitBoard {
     pub fn is_empty(self) -> bool {
         self.0 == 0
     }
+
+    #[inline]
+    pub fn is_attacked(&self, other: Self) -> bool {
+        !(*self & other).is_empty()
+    }
 }
 
 impl std::ops::Index<Square> for [BitBoard; 64] {
@@ -318,6 +323,21 @@ impl<const SIZE: usize> std::ops::Index<Side> for [[BitBoard; SIZE]; 2] {
 }
 
 impl<const SIZE: usize> std::ops::IndexMut<Side> for [[BitBoard; SIZE]; 2] {
+    fn index_mut(&mut self, index: Side) -> &mut Self::Output {
+        &mut self[index as usize]
+    }
+}
+
+impl<const SIZE: usize> std::ops::Index<Side> for [BitBoard; SIZE] {
+    type Output = BitBoard;
+
+    #[inline]
+    fn index(&self, index: Side) -> &Self::Output {
+        &self[index as usize]
+    }
+}
+
+impl<const SIZE: usize> std::ops::IndexMut<Side> for [BitBoard; SIZE] {
     fn index_mut(&mut self, index: Side) -> &mut Self::Output {
         &mut self[index as usize]
     }

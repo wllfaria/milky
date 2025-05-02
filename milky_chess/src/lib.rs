@@ -1,6 +1,7 @@
 use std::sync::OnceLock;
 
 use milky_bitboard::{BitBoard, Boards, CastlingRights, Side, Square};
+use milky_fen::FenParts;
 use random::Random;
 
 mod random;
@@ -13,6 +14,10 @@ static ROOK_ATTACKS: OnceLock<Box<[[BitBoard; 4096]]>> = OnceLock::new();
 
 static BISHOP_BLOCKERS: OnceLock<[BitBoard; 64]> = OnceLock::new();
 static ROOK_BLOCKERS: OnceLock<[BitBoard; 64]> = OnceLock::new();
+
+macro_rules! attacks {
+    ($attacks:ident) => {{ $attacks.get().unwrap() }};
+}
 
 /// Every bit is set except for the bits on the A file
 static EMPTY_A_FILE: BitBoard = BitBoard::new(0xFEFEFEFEFEFEFEFE);
@@ -503,6 +508,32 @@ impl Milky {
         ROOK_ATTACKS.get().unwrap()[square as usize][*occupancy as usize]
     }
 
+    #[inline]
+    fn get_queen_attacks(&self, square: Square, occupancy: BitBoard) -> BitBoard {
+        let mut queen_attacks = BitBoard::default();
+        let bishop_occupancies = occupancy;
+        let rook_occupancies = occupancy;
+
+        queen_attacks = self.get_bishop_attacks(square, bishop_occupancies);
+        queen_attacks |= self.get_rook_attacks(square, rook_occupancies);
+
+        queen_attacks
+    }
+
+    fn load_fen(&mut self, fen_parts: FenParts) {
+        let occupancies = [
+            fen_parts.white_occupancy,
+            fen_parts.black_occupancy,
+            fen_parts.both_occupancy,
+        ];
+
+        self.boards = fen_parts.positions;
+        self.occupancies = occupancies;
+        self.en_passant = fen_parts.en_passant;
+        self.side_to_move = fen_parts.side_to_move;
+        self.castling_rights = fen_parts.castling_rights;
+    }
+
     fn print_board(&self) {
         println!();
 
@@ -613,73 +644,120 @@ impl Milky {
 
         0
     }
+
+    #[inline]
+    pub fn is_square_attacked(&self, square: Square, side: Side) -> bool {
+        let (
+            pawn_side,
+            pawn_board,
+            knight_board,
+            king_board,
+            bishop_board,
+            rook_board,
+            queen_board,
+        ) = match side {
+            Side::White => (
+                Side::Black,
+                self.boards[Boards::WhitePawns],
+                self.boards[Boards::WhiteKnights],
+                self.boards[Boards::WhiteKing],
+                self.boards[Boards::WhiteBishops],
+                self.boards[Boards::WhiteRooks],
+                self.boards[Boards::WhiteQueens],
+            ),
+            Side::Black => (
+                Side::White,
+                self.boards[Boards::BlackPawns],
+                self.boards[Boards::BlackKnights],
+                self.boards[Boards::BlackKing],
+                self.boards[Boards::BlackBishops],
+                self.boards[Boards::BlackRooks],
+                self.boards[Boards::BlackQueens],
+            ),
+            _ => unreachable!(),
+        };
+
+        if attacks!(PAWN_ATTACKS)[pawn_side][square].is_attacked(pawn_board) {
+            return true;
+        }
+
+        if attacks!(KNIGHT_ATTACKS)[square].is_attacked(knight_board) {
+            return true;
+        }
+
+        if attacks!(KING_ATTACKS)[square].is_attacked(king_board) {
+            return true;
+        }
+
+        let occupancy = self.occupancies[Side::Both];
+
+        if self
+            .get_bishop_attacks(square, occupancy)
+            .is_attacked(bishop_board)
+        {
+            return true;
+        }
+
+        if self
+            .get_rook_attacks(square, occupancy)
+            .is_attacked(rook_board)
+        {
+            return true;
+        }
+
+        if self
+            .get_queen_attacks(square, occupancy)
+            .is_attacked(queen_board)
+        {
+            return true;
+        }
+
+        false
+    }
+
+    fn print_attacked_squares(&self, side: Side) {
+        println!();
+
+        for rank in 0..8 {
+            let mut line = String::with_capacity(20);
+            line.push_str(&format!("  {} ", 8 - rank));
+
+            for file in 0..8 {
+                let square = Square::from_u64_unchecked(rank * 8 + file);
+                let bit = if self.is_square_attacked(square, side) { '1' } else { '0' };
+
+                line.push(' ');
+                line.push(bit);
+            }
+
+            println!("{line}");
+        }
+
+        println!();
+        println!("     a b c d e f g h");
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // #[test]
-    // fn test() {
-    //     init_attack_tables();
-    //     // let mut occupancy = BitBoard::default();
-    //     // occupancy.set_bit(Square::C5);
-    //     // occupancy.set_bit(Square::F2);
-    //     // occupancy.set_bit(Square::G7);
-    //     // occupancy.set_bit(Square::B2);
-    //     // occupancy.set_bit(Square::G5);
-    //     // occupancy.set_bit(Square::E2);
-    //     // occupancy.set_bit(Square::E7);
-    //
-    //     let mut engine = Milky::new();
-    //
-    //     engine.boards[Boards::WhiteRooks].set_bit(Square::A1);
-    //     engine.boards[Boards::WhiteKnights].set_bit(Square::B1);
-    //     engine.boards[Boards::WhiteBishops].set_bit(Square::C1);
-    //     engine.boards[Boards::WhiteQueens].set_bit(Square::D1);
-    //     engine.boards[Boards::WhiteKing].set_bit(Square::E1);
-    //     engine.boards[Boards::WhiteBishops].set_bit(Square::F1);
-    //     engine.boards[Boards::WhiteKnights].set_bit(Square::G1);
-    //     engine.boards[Boards::WhiteRooks].set_bit(Square::H1);
-    //
-    //     engine.boards[Boards::WhitePawns].set_bit(Square::A2);
-    //     engine.boards[Boards::WhitePawns].set_bit(Square::B2);
-    //     engine.boards[Boards::WhitePawns].set_bit(Square::C2);
-    //     engine.boards[Boards::WhitePawns].set_bit(Square::D2);
-    //     engine.boards[Boards::WhitePawns].set_bit(Square::E2);
-    //     engine.boards[Boards::WhitePawns].set_bit(Square::F2);
-    //     engine.boards[Boards::WhitePawns].set_bit(Square::G2);
-    //     engine.boards[Boards::WhitePawns].set_bit(Square::H2);
-    //
-    //     engine.boards[Boards::BlackRooks].set_bit(Square::A8);
-    //     engine.boards[Boards::BlackKnights].set_bit(Square::B8);
-    //     engine.boards[Boards::BlackBishops].set_bit(Square::C8);
-    //     engine.boards[Boards::BlackQueens].set_bit(Square::D8);
-    //     engine.boards[Boards::BlackKing].set_bit(Square::E8);
-    //     engine.boards[Boards::BlackBishops].set_bit(Square::F8);
-    //     engine.boards[Boards::BlackKnights].set_bit(Square::G8);
-    //     engine.boards[Boards::BlackRooks].set_bit(Square::H8);
-    //
-    //     engine.boards[Boards::BlackPawns].set_bit(Square::A7);
-    //     engine.boards[Boards::BlackPawns].set_bit(Square::B7);
-    //     engine.boards[Boards::BlackPawns].set_bit(Square::C7);
-    //     engine.boards[Boards::BlackPawns].set_bit(Square::D7);
-    //     engine.boards[Boards::BlackPawns].set_bit(Square::E7);
-    //     engine.boards[Boards::BlackPawns].set_bit(Square::F7);
-    //     engine.boards[Boards::BlackPawns].set_bit(Square::G7);
-    //     engine.boards[Boards::BlackPawns].set_bit(Square::H7);
-    //
-    //     engine.print_board();
-    //
-    //     for board in engine.boards {
-    //         println!("{board}");
-    //     }
-    //
-    //     // println!("{}", engine.get_bishop_attacks(Square::D4, occupancy));
-    //     // println!("{}", engine.get_rook_attacks(Square::E5, occupancy));
-    //
-    //     panic!();
-    // }
+    #[test]
+    fn test() {
+        init_attack_tables();
+
+        let fen_parts =
+            milky_fen::parse_fen_string("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - ")
+                .unwrap();
+
+        let mut engine = Milky::new();
+
+        engine.load_fen(fen_parts);
+        engine.print_board();
+        engine.print_attacked_squares(Side::Black);
+
+        panic!();
+    }
 
     fn bitboard_from_squares(squares: &[Square]) -> BitBoard {
         BitBoard::from(squares)

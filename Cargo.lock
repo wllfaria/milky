@@ -55,6 +55,7 @@ name = "milky_chess"
 version = "0.1.0"
 dependencies = [
  "milky_bitboard",
+ "milky_fen",
 ]
 
 [[package]]
