@@ -1,8 +1,12 @@
 [package]
-name = "milky_chess"
+name = "milky_fen"
 version.workspace = true
 edition.workspace = true
 lints.workspace = true
 
 [dependencies]
 milky_bitboard.workspace = true
+
+thiserror.workspace = true
+
+insta = "1.43.1"

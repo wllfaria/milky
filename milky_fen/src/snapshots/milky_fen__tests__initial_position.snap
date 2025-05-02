@@ -1,0 +1,71 @@
+---
+source: milky_fen/src/lib.rs
+expression: result
+---
+FEN: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
+
+
+  8  r n b q k b n r
+  7  p p p p p p p p
+  6  . . . . . . . .
+  5  . . . . . . . .
+  4  . . . . . . . .
+  3  . . . . . . . .
+  2  P P P P P P P P
+  1  R N B Q K B N R
+
+     a b c d e f g h
+
+
+Side: white
+Castling rights: KQkq
+En passant: --
+Half move: 0
+Full move: 1
+
+White occupancy
+
+  8  0 0 0 0 0 0 0 0
+  7  0 0 0 0 0 0 0 0
+  6  0 0 0 0 0 0 0 0
+  5  0 0 0 0 0 0 0 0
+  4  0 0 0 0 0 0 0 0
+  3  0 0 0 0 0 0 0 0
+  2  1 1 1 1 1 1 1 1
+  1  1 1 1 1 1 1 1 1
+
+     a b c d e f g h
+
+     Bitboard: 18446462598732840960
+
+
+Black occupancy
+
+  8  1 1 1 1 1 1 1 1
+  7  1 1 1 1 1 1 1 1
+  6  0 0 0 0 0 0 0 0
+  5  0 0 0 0 0 0 0 0
+  4  0 0 0 0 0 0 0 0
+  3  0 0 0 0 0 0 0 0
+  2  0 0 0 0 0 0 0 0
+  1  0 0 0 0 0 0 0 0
+
+     a b c d e f g h
+
+     Bitboard: 65535
+
+
+Both occupancy
+
+  8  1 1 1 1 1 1 1 1
+  7  1 1 1 1 1 1 1 1
+  6  0 0 0 0 0 0 0 0
+  5  0 0 0 0 0 0 0 0
+  4  0 0 0 0 0 0 0 0
+  3  0 0 0 0 0 0 0 0
+  2  1 1 1 1 1 1 1 1
+  1  1 1 1 1 1 1 1 1
+
+     a b c d e f g h
+
+     Bitboard: 18446462598732906495

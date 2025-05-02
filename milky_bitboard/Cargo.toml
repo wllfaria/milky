@@ -1,8 +1,8 @@
 [package]
-name = "milky_chess"
+name = "milky_bitboard"
 version.workspace = true
 edition.workspace = true
 lints.workspace = true
 
 [dependencies]
-milky_bitboard.workspace = true
+bitflags = "2.9.0"

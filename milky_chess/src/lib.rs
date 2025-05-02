@@ -1,9 +1,8 @@
 use std::sync::OnceLock;
 
-use bitboard::{BitBoard, Side, Square};
+use milky_bitboard::{BitBoard, Boards, CastlingRights, Side, Square};
 use random::Random;
 
-mod bitboard;
 mod random;
 
 static PAWN_ATTACKS: OnceLock<[[BitBoard; 64]; 2]> = OnceLock::new();
@@ -464,46 +463,6 @@ enum SliderPieceKind {
     Bishop,
 }
 
-bitflags::bitflags! {
-    /// ┌──────┬─────┬─────────────────────────────┐
-    /// │ bin  │ dec │ description                 │
-    /// ├──────┼─────┼─────────────────────────────┤
-    /// │ 0001 │  1  │ White can castle king side  │
-    /// ├──────┼─────┼─────────────────────────────┤
-    /// │ 0010 │  2  │ White can castle queen side │
-    /// ├──────┼─────┼─────────────────────────────┤
-    /// │ 0100 │  4  │ Black can castle king side  │
-    /// ├──────┼─────┼─────────────────────────────┤
-    /// │ 1000 │  8  │ Black can castle queen side │
-    /// └──────┴─────┴─────────────────────────────┘
-    #[repr(transparent)]
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-    pub struct CastlingRights: u8 {
-        const NO_SIDE = 0b0000;
-        const WHITE_K = 0b0001;
-        const WHITE_Q = 0b0010;
-        const BLACK_K = 0b0100;
-        const BLACK_Q = 0b1000;
-        const ALL     = 0b1111;
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-enum Boards {
-    WhitePawns,
-    WhiteKnights,
-    WhiteBishops,
-    WhiteRooks,
-    WhiteQueens,
-    WhiteKing,
-    BlackPawns,
-    BlackKnights,
-    BlackBishops,
-    BlackRooks,
-    BlackQueens,
-    BlackKing,
-}
-
 #[derive(Debug)]
 struct Milky {
     rng: Random,
@@ -521,8 +480,8 @@ impl Milky {
             boards: [BitBoard::empty(); 12],
             occupancies: [BitBoard::empty(); 3],
             side_to_move: Side::White,
-            en_passant: Square::NoSquare,
-            castling_rights: CastlingRights::ALL,
+            en_passant: Square::No,
+            castling_rights: CastlingRights::all(),
         }
     }
 
@@ -542,6 +501,39 @@ impl Milky {
         occupancy >>= (64 - ROOK_RELEVANT_OCCUPANCIES[square as usize]) as u64;
 
         ROOK_ATTACKS.get().unwrap()[square as usize][*occupancy as usize]
+    }
+
+    fn print_board(&self) {
+        println!();
+
+        for rank in 0..8 {
+            let mut line = String::with_capacity(20);
+            line.push_str(&format!("  {} ", 8 - rank));
+
+            for file in 0..8 {
+                let square = Square::from_u64_unchecked(rank * 8 + file);
+                let mut piece = String::from(".");
+
+                for (idx, &board) in self.boards.iter().enumerate() {
+                    if !board.get_bit(square).is_empty() {
+                        piece = Boards::from_usize_unchecked(idx).to_string();
+                        break;
+                    }
+                }
+
+                line.push(' ');
+                line.push_str(&piece);
+            }
+
+            println!("{line}");
+        }
+
+        println!();
+        println!("     a b c d e f g h");
+        println!();
+        println!("     Side:      {}", self.side_to_move);
+        println!("     Castling:   {}", self.castling_rights);
+        println!("     Enpassant:    {}", self.en_passant);
     }
 
     fn init_magic_numbers(&mut self) {
@@ -630,19 +622,61 @@ mod tests {
     // #[test]
     // fn test() {
     //     init_attack_tables();
-    //     let mut occupancy = BitBoard::default();
-    //     occupancy.set_bit(Square::C5);
-    //     occupancy.set_bit(Square::F2);
-    //     occupancy.set_bit(Square::G7);
-    //     occupancy.set_bit(Square::B2);
-    //     occupancy.set_bit(Square::G5);
-    //     occupancy.set_bit(Square::E2);
-    //     occupancy.set_bit(Square::E7);
+    //     // let mut occupancy = BitBoard::default();
+    //     // occupancy.set_bit(Square::C5);
+    //     // occupancy.set_bit(Square::F2);
+    //     // occupancy.set_bit(Square::G7);
+    //     // occupancy.set_bit(Square::B2);
+    //     // occupancy.set_bit(Square::G5);
+    //     // occupancy.set_bit(Square::E2);
+    //     // occupancy.set_bit(Square::E7);
     //
-    //     let engine = Milky::new();
+    //     let mut engine = Milky::new();
     //
-    //     println!("{}", engine.get_bishop_attacks(Square::D4, occupancy));
-    //     println!("{}", engine.get_rook_attacks(Square::E5, occupancy));
+    //     engine.boards[Boards::WhiteRooks].set_bit(Square::A1);
+    //     engine.boards[Boards::WhiteKnights].set_bit(Square::B1);
+    //     engine.boards[Boards::WhiteBishops].set_bit(Square::C1);
+    //     engine.boards[Boards::WhiteQueens].set_bit(Square::D1);
+    //     engine.boards[Boards::WhiteKing].set_bit(Square::E1);
+    //     engine.boards[Boards::WhiteBishops].set_bit(Square::F1);
+    //     engine.boards[Boards::WhiteKnights].set_bit(Square::G1);
+    //     engine.boards[Boards::WhiteRooks].set_bit(Square::H1);
+    //
+    //     engine.boards[Boards::WhitePawns].set_bit(Square::A2);
+    //     engine.boards[Boards::WhitePawns].set_bit(Square::B2);
+    //     engine.boards[Boards::WhitePawns].set_bit(Square::C2);
+    //     engine.boards[Boards::WhitePawns].set_bit(Square::D2);
+    //     engine.boards[Boards::WhitePawns].set_bit(Square::E2);
+    //     engine.boards[Boards::WhitePawns].set_bit(Square::F2);
+    //     engine.boards[Boards::WhitePawns].set_bit(Square::G2);
+    //     engine.boards[Boards::WhitePawns].set_bit(Square::H2);
+    //
+    //     engine.boards[Boards::BlackRooks].set_bit(Square::A8);
+    //     engine.boards[Boards::BlackKnights].set_bit(Square::B8);
+    //     engine.boards[Boards::BlackBishops].set_bit(Square::C8);
+    //     engine.boards[Boards::BlackQueens].set_bit(Square::D8);
+    //     engine.boards[Boards::BlackKing].set_bit(Square::E8);
+    //     engine.boards[Boards::BlackBishops].set_bit(Square::F8);
+    //     engine.boards[Boards::BlackKnights].set_bit(Square::G8);
+    //     engine.boards[Boards::BlackRooks].set_bit(Square::H8);
+    //
+    //     engine.boards[Boards::BlackPawns].set_bit(Square::A7);
+    //     engine.boards[Boards::BlackPawns].set_bit(Square::B7);
+    //     engine.boards[Boards::BlackPawns].set_bit(Square::C7);
+    //     engine.boards[Boards::BlackPawns].set_bit(Square::D7);
+    //     engine.boards[Boards::BlackPawns].set_bit(Square::E7);
+    //     engine.boards[Boards::BlackPawns].set_bit(Square::F7);
+    //     engine.boards[Boards::BlackPawns].set_bit(Square::G7);
+    //     engine.boards[Boards::BlackPawns].set_bit(Square::H7);
+    //
+    //     engine.print_board();
+    //
+    //     for board in engine.boards {
+    //         println!("{board}");
+    //     }
+    //
+    //     // println!("{}", engine.get_bishop_attacks(Square::D4, occupancy));
+    //     // println!("{}", engine.get_rook_attacks(Square::E5, occupancy));
     //
     //     panic!();
     // }
