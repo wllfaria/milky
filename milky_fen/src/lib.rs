@@ -20,16 +20,16 @@ struct UnparsedFenParts<'fen> {
 }
 
 #[derive(Debug)]
-struct FenParts {
-    positions: [BitBoard; 12],
-    white_occupancy: BitBoard,
-    black_occupancy: BitBoard,
-    both_occupancy: BitBoard,
-    side_to_move: Side,
-    castling_rights: CastlingRights,
-    en_passant: Square,
-    half_move_clock: u32,
-    full_move_counter: u32,
+pub struct FenParts {
+    pub positions: [BitBoard; 12],
+    pub white_occupancy: BitBoard,
+    pub black_occupancy: BitBoard,
+    pub both_occupancy: BitBoard,
+    pub side_to_move: Side,
+    pub castling_rights: CastlingRights,
+    pub en_passant: Square,
+    pub half_move_clock: u32,
+    pub full_move_counter: u32,
 }
 
 pub fn parse_fen_string(fen_string: &str) -> Result<FenParts> {
@@ -66,7 +66,7 @@ fn split_fen_string<'fen>(fen_string: &'fen str) -> Result<UnparsedFenParts<'fen
         ));
     }
 
-    let mut parts = fen_string.split(" ");
+    let mut parts = fen_string.trim().split(" ");
 
     let positions = parts
         .next()
