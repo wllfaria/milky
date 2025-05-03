@@ -167,7 +167,7 @@ fn parse_castling_rights(castling_rights_str: &str) -> Result<CastlingRights> {
 
 fn parse_en_passant(en_passant_str: &str) -> Result<Square> {
     if en_passant_str == "-" {
-        return Ok(Square::No);
+        return Ok(Square::OffBoard);
     }
 
     Square::from_algebraic_str(en_passant_str).map_err(Error::MalformedFenString)
