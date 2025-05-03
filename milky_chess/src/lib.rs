@@ -1,6 +1,6 @@
 use std::sync::OnceLock;
 
-use milky_bitboard::{BitBoard, Boards, CastlingRights, Side, Square};
+use milky_bitboard::{BitBoard, Boards, CastlingRights, Rank, Side, Square};
 use milky_fen::FenParts;
 use random::Random;
 
@@ -240,12 +240,12 @@ fn init_slider_piece_attacks(kind: SliderPieceKind) {
 
             let magic_index = match kind {
                 SliderPieceKind::Bishop => {
-                    let magic = occupancy.wrapping_mul(*BISHOP_MAGIC_BITBOARDS[index as usize]);
+                    let magic = occupancy * BISHOP_MAGIC_BITBOARDS[index as usize];
                     let shift = 64 - BISHOP_RELEVANT_OCCUPANCIES[index as usize] as u64;
                     magic >> shift
                 }
                 SliderPieceKind::Rook => {
-                    let magic = occupancy.wrapping_mul(*ROOK_MAGIC_BITBOARDS[index as usize]);
+                    let magic = occupancy * ROOK_MAGIC_BITBOARDS[index as usize];
                     let shift = 64 - ROOK_RELEVANT_OCCUPANCIES[index as usize] as u64;
                     magic >> shift
                 }
@@ -253,11 +253,11 @@ fn init_slider_piece_attacks(kind: SliderPieceKind) {
 
             match kind {
                 SliderPieceKind::Bishop => {
-                    bishop_attacks[square as usize][magic_index as usize] =
+                    bishop_attacks[square as usize][*magic_index as usize] =
                         compute_bishop_attacks(square, occupancy);
                 }
                 SliderPieceKind::Rook => {
-                    rook_attacks[square as usize][magic_index as usize] =
+                    rook_attacks[square as usize][*magic_index as usize] =
                         compute_rook_attacks(square, occupancy);
                 }
             }
@@ -451,7 +451,7 @@ fn set_occupancy(index: usize, bits_in_mask: u32, mut attackers: BitBoard) -> Bi
     let mut occupancy = BitBoard::default();
 
     for count in 0..bits_in_mask {
-        let square = Square::from_u64_unchecked(attackers.trailing_zeros() as u64);
+        let square = attackers.trailing_zeros();
         attackers.clear_bit(square);
 
         if index & (1 << count) != 0 {
@@ -737,62 +737,94 @@ impl Milky {
         println!("     a b c d e f g h");
     }
 
-    #[inline]
     fn generate_moves(&self) {
-        let mut source_square = Square::OffBoard;
-        let mut target_square = Square::OffBoard;
-
-        let mut attacks = BitBoard::default();
-
-        for (idx, mut board) in self.boards.into_iter().enumerate() {
+        for (idx, board) in self.boards.into_iter().enumerate() {
             let piece = Boards::from_usize_unchecked(idx);
 
             if self.side_to_move == Side::White {
                 match piece {
-                    Boards::WhitePawns => {
-                        while !board.is_empty() {
-                            source_square =
-                                Square::from_u64_unchecked(board.trailing_zeros() as u64);
-
-                            match (source_square as u64).checked_sub(8) {
-                                // pawn is not moving off the board
-                                Some(square) => {
-                                    let square = Square::from_u64_unchecked(square);
-
-                                    // target square is not occupied
-                                    if self.occupancies[Side::Both].get_bit(square).is_empty() {
-                                        if source_square >= Square::A7
-                                            && source_square <= Square::H7
-                                        {
-                                            // TODO: add move into move list
-                                            println!("pawn promotion: {source_square} to {square}");
-                                        } else {
-                                            println!("pawn push {source_square} to {square}");
-
-                                            if source_square >= Square::A2
-                                                && source_square <= Square::H2
-                                                && self.occupancies[Side::Both]
-                                                    .get_bit(Square::from_u64_unchecked(
-                                                        square as u64 - 8,
-                                                    ))
-                                                    .is_empty()
-                                            {
-                                                println!(
-                                                    "double pawn push {source_square} to {}",
-                                                    Square::from_u64_unchecked(square as u64 - 8)
-                                                );
-                                            }
-                                        }
-                                    }
-                                }
-                                None => println!("foo"),
-                            }
-
-                            board.clear_bit(source_square);
-                        }
-                    }
-                    _ => todo!(),
+                    Boards::WhitePawns => self.generate_pawn_moves(Side::White, board),
+                    _ => {}
                 }
+            } else {
+                match piece {
+                    Boards::BlackPawns => self.generate_pawn_moves(Side::Black, board),
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    fn generate_pawn_moves(&self, side: Side, board: BitBoard) {
+        let promotion_rank = match side {
+            Side::White => Rank::Seventh,
+            Side::Black => Rank::Second,
+            _ => unreachable!(),
+        };
+
+        let initial_rank = match side {
+            Side::White => Rank::Second,
+            Side::Black => Rank::Seventh,
+            _ => unreachable!(),
+        };
+
+        for square in board {
+            let one_forward = match side {
+                Side::White => square.one_forward(),
+                Side::Black => square.one_backward(),
+                _ => unreachable!(),
+            };
+
+            // Skip if the move would leave the board
+            let Some(one_forward) = one_forward else {
+                continue;
+            };
+
+            if self.occupancies[Side::Both].get_bit(one_forward).is_empty() {
+                if square.is_on_rank(promotion_rank) {
+                    // TODO: add move into move list
+                    println!("pawn promotion: {square} to {one_forward}");
+                    continue;
+                }
+
+                println!("pawn push {square} to {one_forward}");
+
+                if square.is_on_rank(initial_rank) {
+                    // SAFETY: one_forward is valid (verified above)
+                    let two_forward = match side {
+                        Side::White => one_forward.one_forward().unwrap(),
+                        Side::Black => one_forward.one_backward().unwrap(),
+                        _ => unreachable!(),
+                    };
+
+                    if self.occupancies[Side::Both].get_bit(two_forward).is_empty() {
+                        println!("double pawn push {square} to {two_forward}",);
+                    }
+                }
+            }
+
+            let enemy_occupancies = self.occupancies[side.enemy()];
+            let pawn_attacks = attacks!(PAWN_ATTACKS)[side][square];
+            let attacks = pawn_attacks.attacked_squares(enemy_occupancies);
+
+            if self.en_passant != Square::OffBoard {
+                let en_passant_attacks =
+                    pawn_attacks.attacked_squares(BitBoard::from_square(self.en_passant));
+
+                if !en_passant_attacks.is_empty() {
+                    let target = en_passant_attacks.trailing_zeros();
+                    println!("pawn en passant capture {square} to {target}");
+                }
+            }
+
+            for target in attacks {
+                if square.is_on_rank(promotion_rank) {
+                    // TODO: add move into move list
+                    println!("pawn capture promotion: {square} to {target}");
+                    continue;
+                }
+
+                println!("pawn capture {square} to {target}");
             }
         }
     }
@@ -802,23 +834,24 @@ impl Milky {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test() {
-        init_attack_tables();
-
-        let fen_parts =
-            milky_fen::parse_fen_string("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - ")
-                .unwrap();
-
-        let mut engine = Milky::new();
-
-        engine.load_fen(fen_parts);
-        engine.print_board();
-        engine.generate_moves();
-        // engine.print_attacked_squares(Side::Black);
-
-        panic!();
-    }
+    // #[test]
+    // fn test() {
+    //     init_attack_tables();
+    //
+    //     // let pos = "rnbqkb1r/pp1p1pPp/8/2p1pP2/1P1P4/3P3P/P1P1P3/RNBQKBNR w KQkq e6 0 1";
+    //     let pos = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/Pp2P3/2N2Q1p/1PPBBPPP/R3K2R b KQkq a3 0 1 ";
+    //     let fen_parts = milky_fen::parse_fen_string(pos).unwrap();
+    //
+    //     let mut engine = Milky::new();
+    //
+    //     engine.load_fen(fen_parts);
+    //     engine.print_board();
+    //     engine.generate_moves();
+    //
+    //     // engine.print_attacked_squares(Side::Black);
+    //
+    //     panic!();
+    // }
 
     fn bitboard_from_squares(squares: &[Square]) -> BitBoard {
         BitBoard::from(squares)
