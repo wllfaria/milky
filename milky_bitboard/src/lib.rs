@@ -146,7 +146,7 @@ pub enum Square {
     A3, B3, C3, D3, E3, F3, G3, H3,
     A2, B2, C2, D2, E2, F2, G2, H2,
     A1, B1, C1, D1, E1, F1, G1, H1,
-    No,
+    OffBoard,
 }
 
 #[rustfmt::skip]
@@ -166,7 +166,7 @@ impl std::fmt::Display for Square {
                 A3 => "a3", B3 => "b3", C3 => "c3", D3 => "d3", E3 => "e3", F3 => "f3", G3 => "g3", H3 => "h3",
                 A2 => "a2", B2 => "b2", C2 => "c2", D2 => "d2", E2 => "e2", F2 => "f2", G2 => "g2", H2 => "h2",
                 A1 => "a1", B1 => "b1", C1 => "c1", D1 => "d1", E1 => "e1", F1 => "f1", G1 => "g1", H1 => "h1",
-                No => "--",
+                OffBoard => "--",
             }
         )
     }

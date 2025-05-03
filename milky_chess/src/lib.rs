@@ -485,7 +485,7 @@ impl Milky {
             boards: [BitBoard::empty(); 12],
             occupancies: [BitBoard::empty(); 3],
             side_to_move: Side::White,
-            en_passant: Square::No,
+            en_passant: Square::OffBoard,
             castling_rights: CastlingRights::all(),
         }
     }
@@ -736,6 +736,66 @@ impl Milky {
         println!();
         println!("     a b c d e f g h");
     }
+
+    #[inline]
+    fn generate_moves(&self) {
+        let mut source_square = Square::OffBoard;
+        let mut target_square = Square::OffBoard;
+
+        let mut attacks = BitBoard::default();
+
+        for (idx, mut board) in self.boards.into_iter().enumerate() {
+            let piece = Boards::from_usize_unchecked(idx);
+
+            if self.side_to_move == Side::White {
+                match piece {
+                    Boards::WhitePawns => {
+                        while !board.is_empty() {
+                            source_square =
+                                Square::from_u64_unchecked(board.trailing_zeros() as u64);
+
+                            match (source_square as u64).checked_sub(8) {
+                                // pawn is not moving off the board
+                                Some(square) => {
+                                    let square = Square::from_u64_unchecked(square);
+
+                                    // target square is not occupied
+                                    if self.occupancies[Side::Both].get_bit(square).is_empty() {
+                                        if source_square >= Square::A7
+                                            && source_square <= Square::H7
+                                        {
+                                            // TODO: add move into move list
+                                            println!("pawn promotion: {source_square} to {square}");
+                                        } else {
+                                            println!("pawn push {source_square} to {square}");
+
+                                            if source_square >= Square::A2
+                                                && source_square <= Square::H2
+                                                && self.occupancies[Side::Both]
+                                                    .get_bit(Square::from_u64_unchecked(
+                                                        square as u64 - 8,
+                                                    ))
+                                                    .is_empty()
+                                            {
+                                                println!(
+                                                    "double pawn push {source_square} to {}",
+                                                    Square::from_u64_unchecked(square as u64 - 8)
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                                None => println!("foo"),
+                            }
+
+                            board.clear_bit(source_square);
+                        }
+                    }
+                    _ => todo!(),
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -754,7 +814,8 @@ mod tests {
 
         engine.load_fen(fen_parts);
         engine.print_board();
-        engine.print_attacked_squares(Side::Black);
+        engine.generate_moves();
+        // engine.print_attacked_squares(Side::Black);
 
         panic!();
     }
