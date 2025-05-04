@@ -23,6 +23,8 @@ bitflags::bitflags! {
     }
 }
 
+bitflags::bitflags! {}
+
 /// Piece move encoding
 /// ┌─────┬──────────────────┐
 /// │ Bit │ Description      │
@@ -60,7 +62,7 @@ bitflags::bitflags! {
 /// ├──────┬──────┬──────────────────────┤
 /// │ Bit  │ Hex  │ Description          │
 /// ├──────┼──────┼──────────────────────┤
-/// │ 0000 │ 0x00 │ White Pawn           │
+/// │ 0000 │ 0x00 │ No promotion         │
 /// │ 0001 │ 0x01 │ White Rook           │
 /// │ 0010 │ 0x02 │ White Knight         │
 /// │ 0011 │ 0x03 │ White Bishop         │
@@ -76,9 +78,56 @@ bitflags::bitflags! {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Move(u32);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
+pub enum PromotedPieces {
+    NoPromotion,
+    Knight,
+    Bishop,
+    Rook,
+    Queen,
+}
+
+impl std::fmt::Display for PromotedPieces {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PromotedPieces::NoPromotion => write!(f, " "),
+            PromotedPieces::Knight => write!(f, "n"),
+            PromotedPieces::Bishop => write!(f, "b"),
+            PromotedPieces::Rook => write!(f, "r"),
+            PromotedPieces::Queen => write!(f, "q"),
+        }
+    }
+}
+
+impl PromotedPieces {
+    pub fn from_u8_unchecked(value: u8) -> Self {
+        match value {
+            0 => Self::NoPromotion,
+            1 => Self::Knight,
+            2 => Self::Bishop,
+            3 => Self::Rook,
+            4 => Self::Queen,
+            _ => unreachable!(),
+        }
+    }
+}
+
 impl Move {
-    pub fn new(value: u32) -> Self {
-        Self(value)
+    pub fn new(
+        source: Square,
+        target: Square,
+        piece: Pieces,
+        promoted: PromotedPieces,
+        flags: MoveFlags,
+    ) -> Self {
+        let encoded = (source as u32)
+            | ((target as u32) << 6)
+            | ((piece as u32) << 12)
+            | ((promoted as u32) << 16)
+            | ((flags.bits() as u32) << 20);
+
+        Self(encoded)
     }
 
     pub fn source(&self) -> Square {
@@ -93,8 +142,8 @@ impl Move {
         Pieces::from_u8_unchecked(((self.0 >> 12) & 0xF) as u8)
     }
 
-    pub fn promotion(&self) -> Pieces {
-        Pieces::from_u8_unchecked(((self.0 >> 16) & 0xF) as u8)
+    pub fn promotion(&self) -> PromotedPieces {
+        PromotedPieces::from_u8_unchecked(((self.0 >> 16) & 0xF) as u8)
     }
 
     pub fn is_capture(&self) -> bool {
@@ -128,8 +177,8 @@ impl std::fmt::Display for Move {
 
 #[derive(Debug)]
 pub struct MoveList {
-    moves: [Move; 256],
-    count: usize,
+    pub moves: [Move; 256],
+    pub count: usize,
 }
 
 impl Default for MoveList {
@@ -159,7 +208,7 @@ impl std::fmt::Display for MoveList {
         for piece_move in self.moves.iter().take(self.count) {
             writeln!(
                 f,
-                "{piece_move}    {}        {}       {}      {}          {}",
+                "{piece_move}    {}        {:<5}      {:<5}     {:<5}         {:<5}",
                 piece_move.piece(),
                 piece_move.is_capture(),
                 piece_move.is_double_push(),
