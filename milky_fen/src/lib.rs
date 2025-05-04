@@ -19,7 +19,7 @@ struct UnparsedFenParts<'fen> {
     full_move_counter: Option<&'fen str>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FenParts {
     pub positions: [BitBoard; 12],
     pub white_occupancy: BitBoard,

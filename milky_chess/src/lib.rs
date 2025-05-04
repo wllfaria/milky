@@ -842,6 +842,7 @@ impl Milky {
         println!("     a b c d e f g h");
     }
 
+    #[inline(always)]
     pub fn generate_moves(&mut self) {
         self.move_count = 0;
 
@@ -872,6 +873,7 @@ impl Milky {
         }
     }
 
+    #[inline(always)]
     fn generate_pawn_moves(&mut self, side: Side, board: BitBoard) {
         let promotion_rank = match side {
             Side::White => Rank::Seventh,
@@ -1035,6 +1037,7 @@ impl Milky {
         }
     }
 
+    #[inline(always)]
     fn generate_king_moves(&mut self, side: Side, board: BitBoard) {
         let king_side = match side {
             Side::White => CastlingRights::WHITE_K,
@@ -1136,6 +1139,7 @@ impl Milky {
         });
     }
 
+    #[inline(always)]
     fn generate_knight_moves(&mut self, side: Side, board: BitBoard) {
         let piece = match side {
             Side::White => Pieces::WhiteKnight,
@@ -1148,6 +1152,7 @@ impl Milky {
         });
     }
 
+    #[inline(always)]
     fn generate_bishop_moves(&mut self, side: Side, board: BitBoard) {
         let piece = match side {
             Side::White => Pieces::WhiteBishop,
@@ -1160,6 +1165,7 @@ impl Milky {
         });
     }
 
+    #[inline(always)]
     fn generate_rook_moves(&mut self, side: Side, board: BitBoard) {
         let piece = match side {
             Side::White => Pieces::WhiteRook,
@@ -1172,6 +1178,7 @@ impl Milky {
         });
     }
 
+    #[inline(always)]
     fn generate_queen_moves(&mut self, side: Side, board: BitBoard) {
         let piece = match side {
             Side::White => Pieces::WhiteQueen,
@@ -1207,6 +1214,7 @@ impl Milky {
         self.boards[piece].set_bit(target);
     }
 
+    #[inline(always)]
     pub fn make_move(&mut self, piece_move: Move, move_kind: MoveKind) -> bool {
         match move_kind {
             MoveKind::Captures => {
