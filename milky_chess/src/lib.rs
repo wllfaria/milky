@@ -1,10 +1,12 @@
+mod moves;
+mod random;
+
 use std::sync::OnceLock;
 
-use milky_bitboard::{BitBoard, Boards, CastlingRights, Rank, Side, Square};
+use milky_bitboard::{BitBoard, CastlingRights, Pieces, Rank, Side, Square};
 use milky_fen::FenParts;
+use moves::MoveList;
 use random::Random;
-
-mod random;
 
 static PAWN_ATTACKS: OnceLock<[[BitBoard; 64]; 2]> = OnceLock::new();
 static KNIGHT_ATTACKS: OnceLock<[BitBoard; 64]> = OnceLock::new();
@@ -476,6 +478,7 @@ struct Milky {
     side_to_move: Side,
     en_passant: Square,
     castling_rights: CastlingRights,
+    moves: MoveList,
 }
 
 impl Milky {
@@ -487,6 +490,7 @@ impl Milky {
             side_to_move: Side::White,
             en_passant: Square::OffBoard,
             castling_rights: CastlingRights::all(),
+            moves: MoveList::default(),
         }
     }
 
@@ -510,11 +514,10 @@ impl Milky {
 
     #[inline]
     fn get_queen_attacks(&self, square: Square, occupancy: BitBoard) -> BitBoard {
-        let mut queen_attacks = BitBoard::default();
         let bishop_occupancies = occupancy;
         let rook_occupancies = occupancy;
 
-        queen_attacks = self.get_bishop_attacks(square, bishop_occupancies);
+        let mut queen_attacks = self.get_bishop_attacks(square, bishop_occupancies);
         queen_attacks |= self.get_rook_attacks(square, rook_occupancies);
 
         queen_attacks
@@ -547,7 +550,7 @@ impl Milky {
 
                 for (idx, &board) in self.boards.iter().enumerate() {
                     if !board.get_bit(square).is_empty() {
-                        piece = Boards::from_usize_unchecked(idx).to_string();
+                        piece = Pieces::from_usize_unchecked(idx).to_string();
                         break;
                     }
                 }
@@ -658,21 +661,21 @@ impl Milky {
         ) = match side {
             Side::White => (
                 Side::Black,
-                self.boards[Boards::WhitePawns],
-                self.boards[Boards::WhiteKnights],
-                self.boards[Boards::WhiteKing],
-                self.boards[Boards::WhiteBishops],
-                self.boards[Boards::WhiteRooks],
-                self.boards[Boards::WhiteQueens],
+                self.boards[Pieces::WhitePawn],
+                self.boards[Pieces::WhiteKnight],
+                self.boards[Pieces::WhiteKing],
+                self.boards[Pieces::WhiteBishop],
+                self.boards[Pieces::WhiteRook],
+                self.boards[Pieces::WhiteQueen],
             ),
             Side::Black => (
                 Side::White,
-                self.boards[Boards::BlackPawns],
-                self.boards[Boards::BlackKnights],
-                self.boards[Boards::BlackKing],
-                self.boards[Boards::BlackBishops],
-                self.boards[Boards::BlackRooks],
-                self.boards[Boards::BlackQueens],
+                self.boards[Pieces::BlackPawn],
+                self.boards[Pieces::BlackKnight],
+                self.boards[Pieces::BlackKing],
+                self.boards[Pieces::BlackBishop],
+                self.boards[Pieces::BlackRook],
+                self.boards[Pieces::BlackQueen],
             ),
             _ => unreachable!(),
         };
@@ -739,26 +742,26 @@ impl Milky {
 
     fn generate_moves(&self) {
         for (idx, board) in self.boards.into_iter().enumerate() {
-            let piece = Boards::from_usize_unchecked(idx);
+            let piece = Pieces::from_usize_unchecked(idx);
 
             if self.side_to_move == Side::White {
                 match piece {
-                    Boards::WhitePawns => self.generate_pawn_moves(self.side_to_move, board),
-                    Boards::WhiteKing => self.generate_king_moves(self.side_to_move, board),
-                    Boards::WhiteKnights => self.generate_knight_moves(self.side_to_move, board),
-                    Boards::WhiteBishops => self.generate_bishop_moves(self.side_to_move, board),
-                    Boards::WhiteRooks => self.generate_rook_moves(self.side_to_move, board),
-                    Boards::WhiteQueens => self.generate_queen_moves(self.side_to_move, board),
+                    Pieces::WhitePawn => self.generate_pawn_moves(self.side_to_move, board),
+                    Pieces::WhiteKing => self.generate_king_moves(self.side_to_move, board),
+                    Pieces::WhiteKnight => self.generate_knight_moves(self.side_to_move, board),
+                    Pieces::WhiteBishop => self.generate_bishop_moves(self.side_to_move, board),
+                    Pieces::WhiteRook => self.generate_rook_moves(self.side_to_move, board),
+                    Pieces::WhiteQueen => self.generate_queen_moves(self.side_to_move, board),
                     _ => {}
                 }
             } else {
                 match piece {
-                    Boards::BlackPawns => self.generate_pawn_moves(self.side_to_move, board),
-                    Boards::BlackKing => self.generate_king_moves(self.side_to_move, board),
-                    Boards::BlackKnights => self.generate_knight_moves(self.side_to_move, board),
-                    Boards::BlackBishops => self.generate_bishop_moves(self.side_to_move, board),
-                    Boards::BlackRooks => self.generate_rook_moves(self.side_to_move, board),
-                    Boards::BlackQueens => self.generate_queen_moves(self.side_to_move, board),
+                    Pieces::BlackPawn => self.generate_pawn_moves(self.side_to_move, board),
+                    Pieces::BlackKing => self.generate_king_moves(self.side_to_move, board),
+                    Pieces::BlackKnight => self.generate_knight_moves(self.side_to_move, board),
+                    Pieces::BlackBishop => self.generate_bishop_moves(self.side_to_move, board),
+                    Pieces::BlackRook => self.generate_rook_moves(self.side_to_move, board),
+                    Pieces::BlackQueen => self.generate_queen_moves(self.side_to_move, board),
                     _ => {}
                 }
             }
@@ -1009,27 +1012,35 @@ impl Milky {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::moves::MoveFlags;
 
-    // #[test]
-    // fn test() {
-    //     init_attack_tables();
-    //
-    //     // let original = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1 ";
-    //     // let pos = "rnbqkb1r/pp1p1pPp/8/2p1pP2/1P1P4/3P3P/P1P1P3/RNBQKBNR w KQkq e6 0 1";
-    //     let pos = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1 ";
-    //     let fen_parts = milky_fen::parse_fen_string(pos).unwrap();
-    //
-    //     let mut engine = Milky::new();
-    //
-    //     engine.load_fen(fen_parts);
-    //     engine.print_board();
-    //     println!();
-    //     engine.generate_moves();
-    //
-    //     // engine.print_attacked_squares(Side::Black);
-    //
-    //     panic!();
-    // }
+    #[test]
+    fn test() {
+        init_attack_tables();
+
+        // let original = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1 ";
+        // let pos = "rnbqkb1r/pp1p1pPp/8/2p1pP2/1P1P4/3P3P/P1P1P3/RNBQKBNR w KQkq e6 0 1";
+        let pos = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1 ";
+        let fen_parts = milky_fen::parse_fen_string(pos).unwrap();
+
+        let mut engine = Milky::new();
+        engine.load_fen(fen_parts);
+        engine.print_board();
+
+        let piece_move = encode_move!(
+            Square::E2,
+            Square::E4,
+            Pieces::WhitePawn,
+            Pieces::WhiteQueen,
+            MoveFlags::all(),
+        );
+
+        engine.moves.push_move(piece_move);
+
+        println!("{}", engine.moves);
+
+        panic!();
+    }
 
     fn bitboard_from_squares(squares: &[Square]) -> BitBoard {
         BitBoard::from(squares)
