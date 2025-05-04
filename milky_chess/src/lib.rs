@@ -743,12 +743,22 @@ impl Milky {
 
             if self.side_to_move == Side::White {
                 match piece {
-                    Boards::WhitePawns => self.generate_pawn_moves(Side::White, board),
+                    Boards::WhitePawns => self.generate_pawn_moves(self.side_to_move, board),
+                    Boards::WhiteKing => self.generate_king_moves(self.side_to_move, board),
+                    Boards::WhiteKnights => self.generate_knight_moves(self.side_to_move, board),
+                    Boards::WhiteBishops => self.generate_bishop_moves(self.side_to_move, board),
+                    Boards::WhiteRooks => self.generate_rook_moves(self.side_to_move, board),
+                    Boards::WhiteQueens => self.generate_queen_moves(self.side_to_move, board),
                     _ => {}
                 }
             } else {
                 match piece {
-                    Boards::BlackPawns => self.generate_pawn_moves(Side::Black, board),
+                    Boards::BlackPawns => self.generate_pawn_moves(self.side_to_move, board),
+                    Boards::BlackKing => self.generate_king_moves(self.side_to_move, board),
+                    Boards::BlackKnights => self.generate_knight_moves(self.side_to_move, board),
+                    Boards::BlackBishops => self.generate_bishop_moves(self.side_to_move, board),
+                    Boards::BlackRooks => self.generate_rook_moves(self.side_to_move, board),
+                    Boards::BlackQueens => self.generate_queen_moves(self.side_to_move, board),
                     _ => {}
                 }
             }
@@ -783,11 +793,11 @@ impl Milky {
             if self.occupancies[Side::Both].get_bit(one_forward).is_empty() {
                 if square.is_on_rank(promotion_rank) {
                     // TODO: add move into move list
-                    println!("pawn promotion: {square} to {one_forward}");
+                    println!("{square}{one_forward}: pawn promotion");
                     continue;
                 }
 
-                println!("pawn push {square} to {one_forward}");
+                println!("{square}{one_forward}: pawn push");
 
                 if square.is_on_rank(initial_rank) {
                     // SAFETY: one_forward is valid (verified above)
@@ -798,7 +808,7 @@ impl Milky {
                     };
 
                     if self.occupancies[Side::Both].get_bit(two_forward).is_empty() {
-                        println!("double pawn push {square} to {two_forward}",);
+                        println!("{square}{two_forward}: double pawn push");
                     }
                 }
             }
@@ -813,18 +823,184 @@ impl Milky {
 
                 if !en_passant_attacks.is_empty() {
                     let target = en_passant_attacks.trailing_zeros();
-                    println!("pawn en passant capture {square} to {target}");
+                    println!("{square}{target}: pawn en passant capture");
                 }
             }
 
             for target in attacks {
                 if square.is_on_rank(promotion_rank) {
                     // TODO: add move into move list
-                    println!("pawn capture promotion: {square} to {target}");
+                    println!("{square}{target}: pawn capture promotion");
                     continue;
                 }
 
-                println!("pawn capture {square} to {target}");
+                println!("{square}{target}: pawn capture");
+            }
+        }
+    }
+
+    fn generate_king_moves(&self, side: Side, board: BitBoard) {
+        let king_side = match side {
+            Side::White => CastlingRights::WHITE_K,
+            Side::Black => CastlingRights::BLACK_K,
+            _ => unreachable!(),
+        };
+
+        let queen_side = match side {
+            Side::White => CastlingRights::WHITE_Q,
+            Side::Black => CastlingRights::BLACK_Q,
+            _ => unreachable!(),
+        };
+
+        let king_square = match side {
+            Side::White => Square::E1,
+            Side::Black => Square::E8,
+            _ => unreachable!(),
+        };
+
+        // Check whether white king can castle to the king's side
+        if self.castling_rights.contains(king_side) {
+            let required_free_squares = match side {
+                Side::White => (Square::F1, Square::G1),
+                Side::Black => (Square::F8, Square::G8),
+                _ => unreachable!(),
+            };
+
+            // When castling king's side, the squares between the king and king's rook must be
+            // empty. That is, for white, squares f1 and g1, and for black, squares f8 and g8.
+            let first = self.occupancies[Side::Both].get_bit(required_free_squares.0);
+            let second = self.occupancies[Side::Both].get_bit(required_free_squares.1);
+
+            // king cannot be in check and the square next to the king  cannot be attacked. That
+            // is, for white, squares e1 and f1, and for black, squares e8 and f8.
+            let is_king_attacked = self.is_square_attacked(king_square, side.enemy());
+            let is_next_attacked = self.is_square_attacked(required_free_squares.0, side.enemy());
+
+            if first.is_empty() && second.is_empty() && !is_king_attacked && !is_next_attacked {
+                println!("{king_square}{}: castling move", required_free_squares.1);
+            }
+        }
+
+        // Check whether white king can castle to the queen's side
+        if self.castling_rights.contains(queen_side) {
+            let required_free_squares = match side {
+                Side::White => (Square::D1, Square::C1, Square::B1),
+                Side::Black => (Square::D8, Square::C8, Square::B8),
+                _ => unreachable!(),
+            };
+
+            // When castling queen's side, the squares between the king and queen's rook must be
+            // empty. That is, for white, squares d1, c1 and b1, and for black, squares d8, c8 and
+            // b8.
+            let first = self.occupancies[Side::Both].get_bit(required_free_squares.0);
+            let second = self.occupancies[Side::Both].get_bit(required_free_squares.1);
+            let third = self.occupancies[Side::Both].get_bit(required_free_squares.2);
+
+            // king cannot be in check and the square next to the king  cannot be attacked. That
+            // is, for white, squares e1 and f1, and for black, squares e8 and f8.
+            let is_king_attacked = self.is_square_attacked(king_square, side.enemy());
+            let is_next_attacked = self.is_square_attacked(required_free_squares.0, side.enemy());
+
+            if first.is_empty()
+                && second.is_empty()
+                && third.is_empty()
+                && !is_king_attacked
+                && !is_next_attacked
+            {
+                println!("{king_square}{}: castling move", required_free_squares.1);
+            }
+        }
+
+        for square in board {
+            let king_attacks = attacks!(KING_ATTACKS)[square];
+            let occupancies = !self.occupancies[side];
+            let attacks = king_attacks.attacked_squares(occupancies);
+
+            for target in attacks {
+                let occupancies = self.occupancies[side.enemy()];
+
+                if !occupancies.get_bit(target).is_empty() {
+                    println!("{square}{target}: king capture");
+                    continue;
+                }
+
+                println!("{square}{target}: king move");
+            }
+        }
+    }
+
+    fn generate_knight_moves(&self, side: Side, board: BitBoard) {
+        for square in board {
+            let knight_attacks = attacks!(KNIGHT_ATTACKS)[square];
+            let occupancies = !self.occupancies[side];
+            let attacks = knight_attacks.attacked_squares(occupancies);
+
+            for target in attacks {
+                let occupancies = self.occupancies[side.enemy()];
+
+                if !occupancies.get_bit(target).is_empty() {
+                    println!("{square}{target}: knight capture");
+                    continue;
+                }
+
+                println!("{square}{target}: knight move");
+            }
+        }
+    }
+
+    fn generate_bishop_moves(&self, side: Side, board: BitBoard) {
+        for square in board {
+            let bishop_attacks = self.get_bishop_attacks(square, self.occupancies[Side::Both]);
+            let occupancies = !self.occupancies[side];
+            let attacks = bishop_attacks.attacked_squares(occupancies);
+
+            for target in attacks {
+                let occupancies = self.occupancies[side.enemy()];
+
+                if !occupancies.get_bit(target).is_empty() {
+                    println!("{square}{target}: bishop capture");
+                    continue;
+                }
+
+                println!("{square}{target}: bishop move");
+            }
+        }
+    }
+
+    fn generate_rook_moves(&self, side: Side, board: BitBoard) {
+        for square in board {
+            let rook_attacks = self.get_rook_attacks(square, self.occupancies[Side::Both]);
+            let occupancies = !self.occupancies[side];
+            let attacks = rook_attacks.attacked_squares(occupancies);
+
+            for target in attacks {
+                let occupancies = self.occupancies[side.enemy()];
+
+                if !occupancies.get_bit(target).is_empty() {
+                    println!("{square}{target}: rook capture");
+                    continue;
+                }
+
+                println!("{square}{target}: rook move");
+            }
+        }
+    }
+
+    fn generate_queen_moves(&self, side: Side, board: BitBoard) {
+        for square in board {
+            let queen_attacks = self.get_queen_attacks(square, self.occupancies[Side::Both]);
+            let occupancies = !self.occupancies[side];
+            let attacks = queen_attacks.attacked_squares(occupancies);
+
+            for target in attacks {
+                let occupancies = self.occupancies[side.enemy()];
+
+                if !occupancies.get_bit(target).is_empty() {
+                    println!("{square}{target}: queen capture");
+                    continue;
+                }
+
+                println!("{square}{target}: queen move");
             }
         }
     }
@@ -838,14 +1014,16 @@ mod tests {
     // fn test() {
     //     init_attack_tables();
     //
+    //     // let original = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1 ";
     //     // let pos = "rnbqkb1r/pp1p1pPp/8/2p1pP2/1P1P4/3P3P/P1P1P3/RNBQKBNR w KQkq e6 0 1";
-    //     let pos = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/Pp2P3/2N2Q1p/1PPBBPPP/R3K2R b KQkq a3 0 1 ";
+    //     let pos = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1 ";
     //     let fen_parts = milky_fen::parse_fen_string(pos).unwrap();
     //
     //     let mut engine = Milky::new();
     //
     //     engine.load_fen(fen_parts);
     //     engine.print_board();
+    //     println!();
     //     engine.generate_moves();
     //
     //     // engine.print_attacked_squares(Side::Black);

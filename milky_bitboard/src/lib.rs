@@ -433,6 +433,14 @@ impl<const SIZE: usize> std::ops::IndexMut<Side> for [BitBoard; SIZE] {
     }
 }
 
+impl std::ops::Not for BitBoard {
+    type Output = BitBoard;
+
+    fn not(self) -> Self::Output {
+        BitBoard::new(!self.0.0)
+    }
+}
+
 impl std::ops::Mul for BitBoard {
     type Output = BitBoard;
 
