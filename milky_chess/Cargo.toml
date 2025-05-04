@@ -9,3 +9,10 @@ milky_bitboard.workspace = true
 milky_fen.workspace = true
 
 bitflags = "2.9.0"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "perft"
+harness = false
