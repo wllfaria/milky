@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 
 use milky_bitboard::{BitBoard, CastlingRights, Pieces, Rank, Side, Square};
 use milky_fen::FenParts;
-use moves::{Move, MoveFlags, MoveList, PromotedPieces};
+use moves::{Move, MoveFlags, PromotedPieces};
 use random::Random;
 
 static PAWN_ATTACKS: OnceLock<[[BitBoard; 64]; 2]> = OnceLock::new();
@@ -32,6 +32,35 @@ static EMPTY_GH_FILE: BitBoard = BitBoard::new(0x3F3F3F3F3F3F3F3F);
 
 /// Every bit is set except for the bits on the AB files
 static EMPTY_AB_FILE: BitBoard = BitBoard::new(0xFCFCFCFCFCFCFCFC);
+
+/// ┌────────────────┬─────────────┬────────┬─────────────────────────────────────────────────────────┐
+/// │ Castling right │ Move square │ Result │ Description                                             │
+/// ├────────────────┼─────────────┼────────┼─────────────────────────────────────────────────────────┤
+/// │ 1111 (kqQK)    │ 1111 (15)   │ 1111   │ Neither rook or king moved, castling is unchanged       │
+/// ├────────────────┼─────────────┼────────┼─────────────────────────────────────────────────────────┤
+/// │ 1111 (qkQK)    │ 1100 (12)   │ 1100   │ White king moved, white can no longer castle            │
+/// ├────────────────┼─────────────┼────────┼─────────────────────────────────────────────────────────┤
+/// │ 1111 (qkQK)    │ 1110 (14)   │ 1110   │ White king's rook moved, white can't castle king side   │
+/// ├────────────────┼─────────────┼────────┼─────────────────────────────────────────────────────────┤
+/// │ 1111 (qkQK)    │ 1101 (13)   │ 1101   │ White queen's rook moved, white can't castle queen side │
+/// ├────────────────┼─────────────┼────────┼─────────────────────────────────────────────────────────┤
+/// │ 1111 (qkQK)    │ 0011 ( 3)   │ 0011   │ Black king moved, black can no longer castle            │
+/// ├────────────────┼─────────────┼────────┼─────────────────────────────────────────────────────────┤
+/// │ 1111 (qkQK)    │ 1011 (11)   │ 1011   │ Black king's rook moved, black can't castle king side   │
+/// ├────────────────┼─────────────┼────────┼─────────────────────────────────────────────────────────┤
+/// │ 1111 (qkQK)    │ 0111 ( 7)   │ 0111   │ Black queen's rook moved, black can't castle queen side │
+/// └────────────────┴─────────────┴────────┴─────────────────────────────────────────────────────────┘
+#[rustfmt::skip]
+static CASTLING_RIGHTS: [u8; 64] = [
+     7, 15, 15, 15,  3, 15, 15, 11,
+    15, 15, 15, 15, 15, 15, 15, 15,
+    15, 15, 15, 15, 15, 15, 15, 15,
+    15, 15, 15, 15, 15, 15, 15, 15,
+    15, 15, 15, 15, 15, 15, 15, 15,
+    15, 15, 15, 15, 15, 15, 15, 15,
+    15, 15, 15, 15, 15, 15, 15, 15,
+    13, 15, 15, 15, 12, 15, 15, 14,
+];
 
 #[rustfmt::skip]
 static BISHOP_RELEVANT_OCCUPANCIES: [u32; 64] = [
@@ -464,6 +493,30 @@ fn set_occupancy(index: usize, bits_in_mask: u32, mut attackers: BitBoard) -> Bi
     occupancy
 }
 
+fn get_occupancy(positions: &[BitBoard; 12], side: Side) -> BitBoard {
+    let mut occupancy = BitBoard::default();
+
+    match side {
+        Side::White => {
+            for &board in &positions[Pieces::white_pieces_range()] {
+                occupancy |= board;
+            }
+        }
+        Side::Black => {
+            for &board in &positions[Pieces::black_pieces_range()] {
+                occupancy |= board;
+            }
+        }
+        Side::Both => {
+            for &board in &positions[Pieces::range()] {
+                occupancy |= board;
+            }
+        }
+    };
+
+    occupancy
+}
+
 fn get_bishop_attacks(square: Square, mut occupancy: BitBoard) -> BitBoard {
     occupancy &= BISHOP_BLOCKERS.get().unwrap()[square];
     occupancy *= BISHOP_MAGIC_BITBOARDS[square];
@@ -497,14 +550,49 @@ enum SliderPieceKind {
 }
 
 #[derive(Debug)]
-struct Milky {
-    rng: Random,
+pub struct BoardSnapshot {
     boards: [BitBoard; 12],
     occupancies: [BitBoard; 3],
     side_to_move: Side,
     en_passant: Square,
     castling_rights: CastlingRights,
-    moves: MoveList,
+}
+
+impl Default for BoardSnapshot {
+    fn default() -> Self {
+        Self {
+            boards: [BitBoard::default(); 12],
+            occupancies: [BitBoard::default(); 3],
+            side_to_move: Side::White,
+            en_passant: Square::OffBoard,
+            castling_rights: CastlingRights::all(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Milky {
+    rng: Random,
+    pub boards: [BitBoard; 12],
+    pub occupancies: [BitBoard; 3],
+    pub side_to_move: Side,
+    pub en_passant: Square,
+    pub castling_rights: CastlingRights,
+    pub moves: [Move; 256],
+    pub move_count: usize,
+    pub snapshot: BoardSnapshot,
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+pub enum MoveKind {
+    AllMoves,
+    Captures,
+}
+
+impl Default for Milky {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Milky {
@@ -516,11 +604,18 @@ impl Milky {
             side_to_move: Side::White,
             en_passant: Square::OffBoard,
             castling_rights: CastlingRights::all(),
-            moves: MoveList::default(),
+            snapshot: BoardSnapshot::default(),
+            moves: [Move::default(); 256],
+            move_count: 0,
         }
     }
 
-    fn load_fen(&mut self, fen_parts: FenParts) {
+    pub fn push_move(&mut self, piece_move: Move) {
+        self.moves[self.move_count] = piece_move;
+        self.move_count += 1;
+    }
+
+    pub fn load_fen(&mut self, fen_parts: FenParts) {
         let occupancies = [
             fen_parts.white_occupancy,
             fen_parts.black_occupancy,
@@ -534,7 +629,7 @@ impl Milky {
         self.castling_rights = fen_parts.castling_rights;
     }
 
-    fn print_board(&self) {
+    pub fn print_board(&self) {
         println!();
 
         for rank in 0..8 {
@@ -565,6 +660,25 @@ impl Milky {
         println!("     Side:      {}", self.side_to_move);
         println!("     Castling:   {}", self.castling_rights);
         println!("     Enpassant:    {}", self.en_passant);
+    }
+
+    pub fn print_move_list(&self) {
+        println!();
+        println!("move     piece    capture    double    en passant    castling");
+
+        for piece_move in self.moves.iter().take(self.move_count) {
+            println!(
+                "{piece_move}    {}        {:<5}      {:<5}     {:<5}         {:<5}",
+                piece_move.piece(),
+                piece_move.is_capture(),
+                piece_move.is_double_push(),
+                piece_move.is_en_passant(),
+                piece_move.is_castling(),
+            );
+        }
+
+        println!();
+        println!("total moves: {}", self.move_count);
     }
 
     fn init_magic_numbers(&mut self) {
@@ -728,8 +842,8 @@ impl Milky {
         println!("     a b c d e f g h");
     }
 
-    fn generate_moves(&mut self) {
-        self.moves.count = 0;
+    pub fn generate_moves(&mut self) {
+        self.move_count = 0;
 
         for (idx, board) in self.boards.into_iter().enumerate() {
             let piece = Pieces::from_usize_unchecked(idx);
@@ -799,7 +913,7 @@ impl Milky {
             if self.occupancies[Side::Both].get_bit(one_forward).is_empty() {
                 if square.is_on_rank(promotion_rank) {
                     for option in promotion_options {
-                        self.moves.push_move(Move::new(
+                        self.push_move(Move::new(
                             square,
                             one_forward,
                             piece,
@@ -807,17 +921,15 @@ impl Milky {
                             MoveFlags::empty(),
                         ));
                     }
-
-                    continue;
+                } else {
+                    self.push_move(Move::new(
+                        square,
+                        one_forward,
+                        piece,
+                        PromotedPieces::NoPromotion,
+                        MoveFlags::empty(),
+                    ));
                 }
-
-                self.moves.push_move(Move::new(
-                    square,
-                    one_forward,
-                    piece,
-                    PromotedPieces::NoPromotion,
-                    MoveFlags::empty(),
-                ));
 
                 if square.is_on_rank(initial_rank) {
                     // SAFETY: one_forward is valid (verified above)
@@ -828,7 +940,7 @@ impl Milky {
                     };
 
                     if self.occupancies[Side::Both].get_bit(two_forward).is_empty() {
-                        self.moves.push_move(Move::new(
+                        self.push_move(Move::new(
                             square,
                             two_forward,
                             piece,
@@ -849,7 +961,7 @@ impl Milky {
 
                 if !en_passant_attacks.is_empty() {
                     let target = en_passant_attacks.trailing_zeros();
-                    self.moves.push_move(Move::new(
+                    self.push_move(Move::new(
                         square,
                         target,
                         piece,
@@ -862,18 +974,18 @@ impl Milky {
             for target in attacks {
                 if square.is_on_rank(promotion_rank) {
                     for option in promotion_options {
-                        self.moves.push_move(Move::new(
+                        self.push_move(Move::new(
                             square,
                             target,
                             piece,
                             option,
-                            MoveFlags::empty(),
+                            MoveFlags::CAPTURE,
                         ));
                     }
                     continue;
                 }
 
-                self.moves.push_move(Move::new(
+                self.push_move(Move::new(
                     square,
                     target,
                     piece,
@@ -902,7 +1014,7 @@ impl Milky {
                 let occupancies = self.occupancies[side.enemy()];
 
                 if !occupancies.get_bit(target).is_empty() {
-                    self.moves.push_move(Move::new(
+                    self.push_move(Move::new(
                         square,
                         target,
                         piece,
@@ -912,7 +1024,7 @@ impl Milky {
                     continue;
                 }
 
-                self.moves.push_move(Move::new(
+                self.push_move(Move::new(
                     square,
                     target,
                     piece,
@@ -967,7 +1079,7 @@ impl Milky {
             let is_next_attacked = self.is_square_attacked(required_free_squares.0, side.enemy());
 
             if first.is_empty() && second.is_empty() && !is_king_attacked && !is_next_attacked {
-                self.moves.push_move(Move::new(
+                self.push_move(Move::new(
                     king_square,
                     required_free_squares.1,
                     piece,
@@ -1003,7 +1115,7 @@ impl Milky {
                 && !is_king_attacked
                 && !is_next_attacked
             {
-                self.moves.push_move(Move::new(
+                self.push_move(Move::new(
                     king_square,
                     required_free_squares.1,
                     piece,
@@ -1071,31 +1183,198 @@ impl Milky {
             get_queen_attacks(square, occupancies)
         });
     }
+
+    pub fn snapshot_board(&mut self) {
+        self.snapshot = BoardSnapshot {
+            boards: self.boards,
+            occupancies: self.occupancies,
+            side_to_move: self.side_to_move,
+            en_passant: self.en_passant,
+            castling_rights: self.castling_rights,
+        }
+    }
+
+    pub fn undo_move(&mut self) {
+        self.boards = self.snapshot.boards;
+        self.occupancies = self.snapshot.occupancies;
+        self.side_to_move = self.snapshot.side_to_move;
+        self.en_passant = self.snapshot.en_passant;
+        self.castling_rights = self.snapshot.castling_rights;
+    }
+
+    fn move_piece(&mut self, piece: Pieces, source: Square, target: Square) {
+        self.boards[piece].clear_bit(source);
+        self.boards[piece].set_bit(target);
+    }
+
+    pub fn make_move(&mut self, piece_move: Move, move_kind: MoveKind) -> bool {
+        match move_kind {
+            MoveKind::Captures => {
+                if piece_move.is_capture() {
+                    self.make_move(piece_move, MoveKind::AllMoves)
+                } else {
+                    false
+                }
+            }
+            MoveKind::AllMoves => {
+                self.snapshot_board();
+
+                let source = piece_move.source();
+                let target = piece_move.target();
+                let piece = piece_move.piece();
+
+                self.move_piece(piece, source, target);
+
+                if piece_move.is_capture() {
+                    self.handle_capture(target);
+                }
+
+                self.handle_promotion(piece_move.promotion(), target);
+                self.handle_en_passant(piece_move.is_en_passant(), target);
+                self.handle_double_push(piece_move.is_double_push(), target);
+                self.handle_castling(piece_move.is_castling(), target);
+                self.update_castling_rights(source, target);
+                self.update_occupancies();
+
+                self.side_to_move = self.side_to_move.enemy();
+
+                if !self.is_king_safe() {
+                    self.undo_move();
+                    return false;
+                }
+
+                true
+            }
+        }
+    }
+
+    fn handle_capture(&mut self, target: Square) {
+        let (start, end) = match self.side_to_move {
+            Side::White => (Pieces::BlackPawn as usize, Pieces::BlackKing as usize),
+            Side::Black => (Pieces::WhitePawn as usize, Pieces::WhiteKing as usize),
+            _ => unreachable!(),
+        };
+
+        for idx in start..=end {
+            if !self.boards[idx].get_bit(target).is_empty() {
+                self.boards[idx].clear_bit(target);
+                break;
+            }
+        }
+    }
+
+    fn handle_promotion(&mut self, promotion: PromotedPieces, target: Square) {
+        match promotion {
+            // no promotion happened, nothing to do
+            PromotedPieces::NoPromotion => {}
+
+            // remove pawn from its original bitboard and move add the promoted piece to its
+            // corresponding promoted piece
+            _ => {
+                let pawn_side = match self.side_to_move {
+                    Side::White => Pieces::WhitePawn,
+                    Side::Black => Pieces::BlackPawn,
+                    _ => unreachable!(),
+                };
+
+                self.boards[pawn_side].clear_bit(target);
+                self.boards[promotion.into_piece(self.side_to_move)].set_bit(target);
+            }
+        }
+    }
+
+    fn handle_en_passant(&mut self, en_passant: bool, target: Square) {
+        if en_passant {
+            let pawn_side = match self.side_to_move {
+                Side::White => Pieces::BlackPawn,
+                Side::Black => Pieces::WhitePawn,
+                _ => unreachable!(),
+            };
+
+            let square = match self.side_to_move {
+                Side::White => target.one_backward().unwrap(),
+                Side::Black => target.one_forward().unwrap(),
+                _ => unreachable!(),
+            };
+
+            self.boards[pawn_side].clear_bit(square);
+        }
+
+        self.en_passant = Square::OffBoard;
+    }
+
+    fn handle_double_push(&mut self, double_push: bool, target: Square) {
+        if double_push {
+            self.en_passant = match self.side_to_move {
+                Side::White => target.one_backward().unwrap(),
+                Side::Black => target.one_forward().unwrap(),
+                _ => unreachable!(),
+            };
+        }
+    }
+
+    fn handle_castling(&mut self, castling: bool, target: Square) {
+        if castling {
+            match target {
+                // White castles king side
+                Square::G1 => {
+                    self.boards[Pieces::WhiteRook].clear_bit(Square::H1);
+                    self.boards[Pieces::WhiteRook].set_bit(Square::F1);
+                }
+                // White castles queen side
+                Square::C1 => {
+                    self.boards[Pieces::WhiteRook].clear_bit(Square::A1);
+                    self.boards[Pieces::WhiteRook].set_bit(Square::D1);
+                }
+                // Black castles king side
+                Square::G8 => {
+                    self.boards[Pieces::BlackRook].clear_bit(Square::H8);
+                    self.boards[Pieces::BlackRook].set_bit(Square::F8);
+                }
+                // Black castles queen side
+                Square::C8 => {
+                    self.boards[Pieces::BlackRook].clear_bit(Square::A8);
+                    self.boards[Pieces::BlackRook].set_bit(Square::D8);
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    fn update_castling_rights(&mut self, source: Square, target: Square) {
+        let source_rights = CASTLING_RIGHTS[source as usize];
+        let target_rights = CASTLING_RIGHTS[target as usize];
+
+        self.castling_rights = self
+            .castling_rights
+            .intersection(CastlingRights::from_bits_retain(source_rights));
+
+        self.castling_rights = self
+            .castling_rights
+            .intersection(CastlingRights::from_bits_retain(target_rights));
+    }
+
+    fn update_occupancies(&mut self) {
+        self.occupancies[Side::White] = get_occupancy(&self.boards, Side::White);
+        self.occupancies[Side::Black] = get_occupancy(&self.boards, Side::Black);
+        self.occupancies[Side::Both] = get_occupancy(&self.boards, Side::Both);
+    }
+
+    fn is_king_safe(&mut self) -> bool {
+        let king = match self.side_to_move {
+            Side::White => Pieces::BlackKing,
+            Side::Black => Pieces::WhiteKing,
+            _ => unreachable!(),
+        };
+
+        let king_square = self.boards[king].trailing_zeros();
+        !self.is_square_attacked(king_square, self.side_to_move)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test() {
-        init_attack_tables();
-        let mut engine = Milky::new();
-
-        // let original = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1 ";
-        // let pos = "rnbqkb1r/pp1p1pPp/8/2p1pP2/1P1P4/3P3P/P1P1P3/RNBQKBNR w KQkq e6 0 1";
-        let pos = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1 ";
-        let fen_parts = milky_fen::parse_fen_string(pos).unwrap();
-
-        engine.load_fen(fen_parts);
-        engine.print_board();
-
-        engine.generate_moves();
-
-        println!("{}", engine.moves);
-
-        panic!();
-    }
 
     fn bitboard_from_squares(squares: &[Square]) -> BitBoard {
         BitBoard::from(squares)

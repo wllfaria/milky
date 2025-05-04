@@ -6,6 +6,16 @@ members = [
     "milky_bitboard",
 ]
 
+[package]
+name = "milky_engine"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+milky_chess.workspace = true
+milky_fen.workspace = true
+milky_bitboard.workspace = true
+
 [workspace.package]
 edition = "2024"
 version = "0.1.0"

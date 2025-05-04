@@ -1,4 +1,4 @@
-use milky_bitboard::{Pieces, Square};
+use milky_bitboard::{Pieces, Side, Square};
 
 bitflags::bitflags! {
     /// ┌──────┬──────────────────┐
@@ -111,6 +111,36 @@ impl PromotedPieces {
             _ => unreachable!(),
         }
     }
+
+    pub fn into_piece(self, side: Side) -> Pieces {
+        match self {
+            PromotedPieces::NoPromotion => match side {
+                Side::White => Pieces::WhitePawn,
+                Side::Black => Pieces::BlackPawn,
+                _ => unreachable!(),
+            },
+            PromotedPieces::Knight => match side {
+                Side::White => Pieces::WhiteKnight,
+                Side::Black => Pieces::BlackKnight,
+                _ => unreachable!(),
+            },
+            PromotedPieces::Bishop => match side {
+                Side::White => Pieces::WhiteBishop,
+                Side::Black => Pieces::BlackBishop,
+                _ => unreachable!(),
+            },
+            PromotedPieces::Rook => match side {
+                Side::White => Pieces::WhiteRook,
+                Side::Black => Pieces::BlackRook,
+                _ => unreachable!(),
+            },
+            PromotedPieces::Queen => match side {
+                Side::White => Pieces::WhiteQueen,
+                Side::Black => Pieces::BlackQueen,
+                _ => unreachable!(),
+            },
+        }
+    }
 }
 
 impl Move {
@@ -172,55 +202,6 @@ impl std::fmt::Display for Move {
             self.target(),
             self.promotion().to_string().to_lowercase()
         )
-    }
-}
-
-#[derive(Debug)]
-pub struct MoveList {
-    pub moves: [Move; 256],
-    pub count: usize,
-}
-
-impl Default for MoveList {
-    fn default() -> Self {
-        Self {
-            moves: [Move::default(); 256],
-            count: 0,
-        }
-    }
-}
-
-impl MoveList {
-    pub fn push_move(&mut self, piece_move: Move) {
-        self.moves[self.count] = piece_move;
-        self.count += 1;
-    }
-}
-
-impl std::fmt::Display for MoveList {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f)?;
-        writeln!(
-            f,
-            "move     piece    capture    double    en passant    castling"
-        )?;
-
-        for piece_move in self.moves.iter().take(self.count) {
-            writeln!(
-                f,
-                "{piece_move}    {}        {:<5}      {:<5}     {:<5}         {:<5}",
-                piece_move.piece(),
-                piece_move.is_capture(),
-                piece_move.is_double_push(),
-                piece_move.is_en_passant(),
-                piece_move.is_castling(),
-            )?;
-        }
-
-        writeln!(f)?;
-        writeln!(f, "total moves: {}", self.count)?;
-
-        Ok(())
     }
 }
 
