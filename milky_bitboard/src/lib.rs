@@ -39,22 +39,22 @@ impl std::fmt::Display for CastlingRights {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum Boards {
-    WhitePawns,
-    WhiteRooks,
-    WhiteKnights,
-    WhiteBishops,
-    WhiteQueens,
+pub enum Pieces {
+    WhitePawn,
+    WhiteRook,
+    WhiteKnight,
+    WhiteBishop,
+    WhiteQueen,
     WhiteKing,
-    BlackPawns,
-    BlackRooks,
-    BlackKnights,
-    BlackBishops,
-    BlackQueens,
+    BlackPawn,
+    BlackRook,
+    BlackKnight,
+    BlackBishop,
+    BlackQueen,
     BlackKing,
 }
 
-impl Boards {
+impl Pieces {
     pub fn white_pieces_range() -> std::ops::Range<usize> {
         0..6
     }
@@ -69,52 +69,70 @@ impl Boards {
 
     pub fn from_usize_unchecked(value: usize) -> Self {
         match value {
-            0 => Boards::WhitePawns,
-            1 => Boards::WhiteRooks,
-            2 => Boards::WhiteKnights,
-            3 => Boards::WhiteBishops,
-            4 => Boards::WhiteQueens,
-            5 => Boards::WhiteKing,
-            6 => Boards::BlackPawns,
-            7 => Boards::BlackRooks,
-            8 => Boards::BlackKnights,
-            9 => Boards::BlackBishops,
-            10 => Boards::BlackQueens,
-            11 => Boards::BlackKing,
+            0 => Pieces::WhitePawn,
+            1 => Pieces::WhiteRook,
+            2 => Pieces::WhiteKnight,
+            3 => Pieces::WhiteBishop,
+            4 => Pieces::WhiteQueen,
+            5 => Pieces::WhiteKing,
+            6 => Pieces::BlackPawn,
+            7 => Pieces::BlackRook,
+            8 => Pieces::BlackKnight,
+            9 => Pieces::BlackBishop,
+            10 => Pieces::BlackQueen,
+            11 => Pieces::BlackKing,
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn from_u8_unchecked(value: u8) -> Self {
+        match value {
+            0 => Pieces::WhitePawn,
+            1 => Pieces::WhiteRook,
+            2 => Pieces::WhiteKnight,
+            3 => Pieces::WhiteBishop,
+            4 => Pieces::WhiteQueen,
+            5 => Pieces::WhiteKing,
+            6 => Pieces::BlackPawn,
+            7 => Pieces::BlackRook,
+            8 => Pieces::BlackKnight,
+            9 => Pieces::BlackBishop,
+            10 => Pieces::BlackQueen,
+            11 => Pieces::BlackKing,
             _ => unreachable!(),
         }
     }
 }
 
-impl std::fmt::Display for Boards {
+impl std::fmt::Display for Pieces {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Boards::WhitePawns => write!(f, "P"),
-            Boards::WhiteKnights => write!(f, "N"),
-            Boards::WhiteBishops => write!(f, "B"),
-            Boards::WhiteRooks => write!(f, "R"),
-            Boards::WhiteQueens => write!(f, "Q"),
-            Boards::WhiteKing => write!(f, "K"),
-            Boards::BlackPawns => write!(f, "p"),
-            Boards::BlackKnights => write!(f, "n"),
-            Boards::BlackBishops => write!(f, "b"),
-            Boards::BlackRooks => write!(f, "r"),
-            Boards::BlackQueens => write!(f, "q"),
-            Boards::BlackKing => write!(f, "k"),
+            Pieces::WhitePawn => write!(f, "P"),
+            Pieces::WhiteKnight => write!(f, "N"),
+            Pieces::WhiteBishop => write!(f, "B"),
+            Pieces::WhiteRook => write!(f, "R"),
+            Pieces::WhiteQueen => write!(f, "Q"),
+            Pieces::WhiteKing => write!(f, "K"),
+            Pieces::BlackPawn => write!(f, "p"),
+            Pieces::BlackKnight => write!(f, "n"),
+            Pieces::BlackBishop => write!(f, "b"),
+            Pieces::BlackRook => write!(f, "r"),
+            Pieces::BlackQueen => write!(f, "q"),
+            Pieces::BlackKing => write!(f, "k"),
         }
     }
 }
 
-impl std::ops::Index<Boards> for [BitBoard; 12] {
+impl std::ops::Index<Pieces> for [BitBoard; 12] {
     type Output = BitBoard;
 
-    fn index(&self, index: Boards) -> &Self::Output {
+    fn index(&self, index: Pieces) -> &Self::Output {
         &self[index as usize]
     }
 }
 
-impl std::ops::IndexMut<Boards> for [BitBoard; 12] {
-    fn index_mut(&mut self, index: Boards) -> &mut Self::Output {
+impl std::ops::IndexMut<Pieces> for [BitBoard; 12] {
+    fn index_mut(&mut self, index: Pieces) -> &mut Self::Output {
         &mut self[index as usize]
     }
 }
@@ -146,6 +164,19 @@ impl std::fmt::Display for Side {
     }
 }
 
+#[repr(u64)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+pub enum Rank {
+    First,
+    Second,
+    Third,
+    Fourth,
+    Fifth,
+    Sixth,
+    Seventh,
+    Eighth,
+}
+
 #[rustfmt::skip]
 #[repr(u64)]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
@@ -161,20 +192,12 @@ pub enum Square {
     OffBoard,
 }
 
-#[repr(u64)]
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
-pub enum Rank {
-    First,
-    Second,
-    Third,
-    Fourth,
-    Fifth,
-    Sixth,
-    Seventh,
-    Eighth,
-}
-
 impl Square {
+    /// SAFETY: `value` must always be 0..=63
+    pub fn from_u64_unchecked(value: u64) -> Self {
+        unsafe { std::mem::transmute(value) }
+    }
+
     pub fn one_forward(&self) -> Option<Self> {
         (*self as u64)
             .checked_sub(8)
@@ -198,36 +221,6 @@ impl Square {
             Rank::Seventh => *self >= Self::A7 && *self <= Square::H7,
             Rank::Eighth =>  *self >= Self::A8 && *self <= Square::H8,
         }
-    }
-}
-
-#[rustfmt::skip]
-impl std::fmt::Display for Square {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use Square::*;
-
-        write!(
-            f,
-            "{}",
-            match self {
-                A8 => "a8", B8 => "b8", C8 => "c8", D8 => "d8", E8 => "e8", F8 => "f8", G8 => "g8", H8 => "h8",
-                A7 => "a7", B7 => "b7", C7 => "c7", D7 => "d7", E7 => "e7", F7 => "f7", G7 => "g7", H7 => "h7",
-                A6 => "a6", B6 => "b6", C6 => "c6", D6 => "d6", E6 => "e6", F6 => "f6", G6 => "g6", H6 => "h6",
-                A5 => "a5", B5 => "b5", C5 => "c5", D5 => "d5", E5 => "e5", F5 => "f5", G5 => "g5", H5 => "h5",
-                A4 => "a4", B4 => "b4", C4 => "c4", D4 => "d4", E4 => "e4", F4 => "f4", G4 => "g4", H4 => "h4",
-                A3 => "a3", B3 => "b3", C3 => "c3", D3 => "d3", E3 => "e3", F3 => "f3", G3 => "g3", H3 => "h3",
-                A2 => "a2", B2 => "b2", C2 => "c2", D2 => "d2", E2 => "e2", F2 => "f2", G2 => "g2", H2 => "h2",
-                A1 => "a1", B1 => "b1", C1 => "c1", D1 => "d1", E1 => "e1", F1 => "f1", G1 => "g1", H1 => "h1",
-                OffBoard => "--",
-            }
-        )
-    }
-}
-
-impl Square {
-    /// SAFETY: `value` must always be 0..=63
-    pub fn from_u64_unchecked(value: u64) -> Self {
-        unsafe { std::mem::transmute(value) }
     }
 
     pub fn from_algebraic_str(str: &str) -> Result<Square, String> {
@@ -298,6 +291,29 @@ impl Square {
             "h8" => Ok(Square::H8),
             _ => Err(format!("Invalid square: {str}")),
         }
+    }
+}
+
+#[rustfmt::skip]
+impl std::fmt::Display for Square {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use Square::*;
+
+        write!(
+            f,
+            "{}",
+            match self {
+                A8 => "a8", B8 => "b8", C8 => "c8", D8 => "d8", E8 => "e8", F8 => "f8", G8 => "g8", H8 => "h8",
+                A7 => "a7", B7 => "b7", C7 => "c7", D7 => "d7", E7 => "e7", F7 => "f7", G7 => "g7", H7 => "h7",
+                A6 => "a6", B6 => "b6", C6 => "c6", D6 => "d6", E6 => "e6", F6 => "f6", G6 => "g6", H6 => "h6",
+                A5 => "a5", B5 => "b5", C5 => "c5", D5 => "d5", E5 => "e5", F5 => "f5", G5 => "g5", H5 => "h5",
+                A4 => "a4", B4 => "b4", C4 => "c4", D4 => "d4", E4 => "e4", F4 => "f4", G4 => "g4", H4 => "h4",
+                A3 => "a3", B3 => "b3", C3 => "c3", D3 => "d3", E3 => "e3", F3 => "f3", G3 => "g3", H3 => "h3",
+                A2 => "a2", B2 => "b2", C2 => "c2", D2 => "d2", E2 => "e2", F2 => "f2", G2 => "g2", H2 => "h2",
+                A1 => "a1", B1 => "b1", C1 => "c1", D1 => "d1", E1 => "e1", F1 => "f1", G1 => "g1", H1 => "h1",
+                OffBoard => "--",
+            }
+        )
     }
 }
 

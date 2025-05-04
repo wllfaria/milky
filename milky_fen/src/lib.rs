@@ -1,4 +1,4 @@
-use milky_bitboard::{BitBoard, Boards, CastlingRights, Side, Square};
+use milky_bitboard::{BitBoard, CastlingRights, Pieces, Side, Square};
 use thiserror::Error;
 
 type Result<R> = std::result::Result<R, Error>;
@@ -108,18 +108,18 @@ fn parse_position(position: &str) -> [BitBoard; 12] {
         let mut skip = 1;
 
         match ch {
-            'r' => boards[Boards::BlackRooks].set_bit(square),
-            'b' => boards[Boards::BlackBishops].set_bit(square),
-            'n' => boards[Boards::BlackKnights].set_bit(square),
-            'q' => boards[Boards::BlackQueens].set_bit(square),
-            'k' => boards[Boards::BlackKing].set_bit(square),
-            'p' => boards[Boards::BlackPawns].set_bit(square),
-            'R' => boards[Boards::WhiteRooks].set_bit(square),
-            'B' => boards[Boards::WhiteBishops].set_bit(square),
-            'N' => boards[Boards::WhiteKnights].set_bit(square),
-            'Q' => boards[Boards::WhiteQueens].set_bit(square),
-            'K' => boards[Boards::WhiteKing].set_bit(square),
-            'P' => boards[Boards::WhitePawns].set_bit(square),
+            'r' => boards[Pieces::BlackRook].set_bit(square),
+            'b' => boards[Pieces::BlackBishop].set_bit(square),
+            'n' => boards[Pieces::BlackKnight].set_bit(square),
+            'q' => boards[Pieces::BlackQueen].set_bit(square),
+            'k' => boards[Pieces::BlackKing].set_bit(square),
+            'p' => boards[Pieces::BlackPawn].set_bit(square),
+            'R' => boards[Pieces::WhiteRook].set_bit(square),
+            'B' => boards[Pieces::WhiteBishop].set_bit(square),
+            'N' => boards[Pieces::WhiteKnight].set_bit(square),
+            'Q' => boards[Pieces::WhiteQueen].set_bit(square),
+            'K' => boards[Pieces::WhiteKing].set_bit(square),
+            'P' => boards[Pieces::WhitePawn].set_bit(square),
             '1'..='8' => skip = ch.to_digit(10).unwrap() as u64,
             '/' => {
                 rank += 1;
@@ -198,17 +198,17 @@ fn get_occupancy(positions: [BitBoard; 12], side: Side) -> BitBoard {
 
     match side {
         Side::White => {
-            for &board in &positions[Boards::white_pieces_range()] {
+            for &board in &positions[Pieces::white_pieces_range()] {
                 occupancy |= board;
             }
         }
         Side::Black => {
-            for &board in &positions[Boards::black_pieces_range()] {
+            for &board in &positions[Pieces::black_pieces_range()] {
                 occupancy |= board;
             }
         }
         Side::Both => {
-            for &board in &positions[Boards::range()] {
+            for &board in &positions[Pieces::range()] {
                 occupancy |= board;
             }
         }
@@ -297,7 +297,7 @@ mod tests {
 
                 for (idx, &board) in boards.iter().enumerate() {
                     if !board.get_bit(square).is_empty() {
-                        piece = Boards::from_usize_unchecked(idx).to_string();
+                        piece = Pieces::from_usize_unchecked(idx).to_string();
                         break;
                     }
                 }
