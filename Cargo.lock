@@ -60,6 +60,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "milky_engine"
+version = "0.1.0"
+dependencies = [
+ "milky_bitboard",
+ "milky_chess",
+ "milky_fen",
+]
+
+[[package]]
 name = "milky_fen"
 version = "0.1.0"
 dependencies = [
