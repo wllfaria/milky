@@ -67,6 +67,23 @@ impl Pieces {
         0..12
     }
 
+    pub fn side(&self) -> Side {
+        match self {
+            Pieces::WhitePawn
+            | Pieces::WhiteRook
+            | Pieces::WhiteKnight
+            | Pieces::WhiteBishop
+            | Pieces::WhiteQueen
+            | Pieces::WhiteKing => Side::White,
+            Pieces::BlackPawn
+            | Pieces::BlackRook
+            | Pieces::BlackKnight
+            | Pieces::BlackBishop
+            | Pieces::BlackQueen
+            | Pieces::BlackKing => Side::Black,
+        }
+    }
+
     pub fn from_usize_unchecked(value: usize) -> Self {
         match value {
             0 => Pieces::WhitePawn,
@@ -356,6 +373,10 @@ impl BitBoard {
 
     pub fn is_empty(self) -> bool {
         self.0 == Wrapping(0)
+    }
+
+    pub fn is_set(self) -> bool {
+        self.0 != Wrapping(0)
     }
 
     pub fn attacked_squares(&self, other: Self) -> Self {
