@@ -2,3 +2,7 @@
 name = "milky_cli"
 version.workspace = true
 edition.workspace = true
+
+[dependencies]
+milky_chess.workspace = true
+milky_protocols.workspace = true

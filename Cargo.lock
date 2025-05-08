@@ -149,6 +149,10 @@ dependencies = [
 [[package]]
 name = "milky_cli"
 version = "0.1.0"
+dependencies = [
+ "milky_chess",
+ "milky_protocols",
+]
 
 [[package]]
 name = "milky_fen"

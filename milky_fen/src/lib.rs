@@ -30,6 +30,7 @@ pub struct FenParts {
     pub en_passant: Square,
     pub half_move_clock: u32,
     pub full_move_counter: u32,
+    pub original: String,
 }
 
 pub fn parse_fen_string(fen_string: &str) -> Result<FenParts> {
@@ -56,6 +57,7 @@ pub fn parse_fen_string(fen_string: &str) -> Result<FenParts> {
         white_occupancy,
         black_occupancy,
         both_occupancy,
+        original: fen_string.to_string(),
     })
 }
 
