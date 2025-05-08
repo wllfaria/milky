@@ -5,14 +5,14 @@ expression: result
 FEN: rnbqkb1r/pp1p1pPp/8/2p1pP2/1P1P4/3P3P/P1P1P3/RNBQKBNR w KQkq e6 0 1
 
 
-  8  r n b q k b . r
-  7  p p . p . p P p
+  8  ♜ ♞ ♝ ♛ ♚ ♝ . ♜
+  7  ♟ ♟ . ♟ . ♟ ♙ ♟
   6  . . . . . . . .
-  5  . . p . p P . .
-  4  . P . P . . . .
-  3  . . . P . . . P
-  2  P . P . P . . .
-  1  R N B Q K B N R
+  5  . . ♟ . ♟ ♙ . .
+  4  . ♙ . ♙ . . . .
+  3  . . . ♙ . . . ♙
+  2  ♙ . ♙ . ♙ . . .
+  1  ♖ ♘ ♗ ♕ ♔ ♗ ♘ ♖
 
      a b c d e f g h
 

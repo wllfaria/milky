@@ -4,17 +4,9 @@ members = [
     "milky_chess",
     "milky_fen",
     "milky_bitboard",
+    "milky_protocols",
+    "milky_cli",
 ]
-
-[package]
-name = "milky_engine"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-milky_chess.workspace = true
-milky_fen.workspace = true
-milky_bitboard.workspace = true
 
 [workspace.package]
 edition = "2024"
@@ -24,6 +16,8 @@ version = "0.1.0"
 milky_chess = { path = "milky_chess" }
 milky_fen = { path = "milky_fen" }
 milky_bitboard = { path = "milky_bitboard" }
+milky_protocols = { path = "milky_protocols" }
+milky_cli = { path = "milky_cli" }
 
 thiserror = { version = "2.0.12" }
 

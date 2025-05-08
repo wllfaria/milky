@@ -1,4 +1,5 @@
-use milky_bitboard::{Pieces, Side, Square};
+use crate::error::Result;
+use crate::{BitBoard, Pieces, Side, Square};
 
 bitflags::bitflags! {
     /// ┌──────┬──────────────────┐
@@ -22,61 +23,6 @@ bitflags::bitflags! {
         const CASTLING    = 0b1000;
     }
 }
-
-bitflags::bitflags! {}
-
-/// Piece move encoding
-/// ┌─────┬──────────────────┐
-/// │ Bit │ Description      │
-/// ├─────┼──────────────────┤
-/// │  6  │ Source square    │
-/// ├─────┼──────────────────┤
-/// │  6  │ Target square    │
-/// ├─────┼──────────────────┤
-/// │  4  │ Piece moved      │
-/// ├─────┼──────────────────┤
-/// │  4  │ Promoted piece   │
-/// ├─────┼──────────────────┤
-/// │  1  │ Capture flag     │
-/// ├─────┼──────────────────┤
-/// │  1  │ Double push flag │
-/// ├─────┼──────────────────┤
-/// │  1  │ En passant flag  │
-/// ├─────┼──────────────────┤
-/// │  1  │ Castling flag    │
-/// └─────┴──────────────────┘
-///
-/// 0 0 0 0 0000 0000 000000 000000
-/// ▲ ▲ ▲ ▲ ▲▲▲▲ ▲▲▲▲ ▲▲▲▲▲▲ ▲▲▲▲▲▲
-/// │ │ │ │  │    │     │     └─────▶ source square
-/// │ │ │ │  │    │     └───────────▶ target square
-/// │ │ │ │  │    └─────────────────▶ piece moved
-/// │ │ │ │  └──────────────────────▶ promoted piece
-/// │ │ │ └─────────────────────────▶ capture flag
-/// │ │ └───────────────────────────▶ double push flag
-/// │ └─────────────────────────────▶ en passant flag
-/// └───────────────────────────────▶ castling flag
-///
-/// ┌────────────────────────────────────┐
-/// │ Binary piece representation        │
-/// ├──────┬──────┬──────────────────────┤
-/// │ Bit  │ Hex  │ Description          │
-/// ├──────┼──────┼──────────────────────┤
-/// │ 0000 │ 0x00 │ No promotion         │
-/// │ 0001 │ 0x01 │ White Rook           │
-/// │ 0010 │ 0x02 │ White Knight         │
-/// │ 0011 │ 0x03 │ White Bishop         │
-/// │ 0100 │ 0x04 │ White Queen          │
-/// │ 0101 │ 0x05 │ White King           │
-/// │ 0110 │ 0x06 │ Black Pawn           │
-/// │ 0111 │ 0x07 │ Black Rook           │
-/// │ 1000 │ 0x08 │ Black Knight         │
-/// │ 1001 │ 0x09 │ Black Bishop         │
-/// │ 1010 │ 0x0A │ Black Queen          │
-/// │ 1011 │ 0x0B │ Black King           │
-/// └──────┴──────┴──────────────────────┘
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Move(u32);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
@@ -142,6 +88,59 @@ impl PromotedPieces {
         }
     }
 }
+
+/// Piece move encoding
+/// ┌─────┬──────────────────┐
+/// │ Bit │ Description      │
+/// ├─────┼──────────────────┤
+/// │  6  │ Source square    │
+/// ├─────┼──────────────────┤
+/// │  6  │ Target square    │
+/// ├─────┼──────────────────┤
+/// │  4  │ Piece moved      │
+/// ├─────┼──────────────────┤
+/// │  4  │ Promoted piece   │
+/// ├─────┼──────────────────┤
+/// │  1  │ Capture flag     │
+/// ├─────┼──────────────────┤
+/// │  1  │ Double push flag │
+/// ├─────┼──────────────────┤
+/// │  1  │ En passant flag  │
+/// ├─────┼──────────────────┤
+/// │  1  │ Castling flag    │
+/// └─────┴──────────────────┘
+///
+/// 0 0 0 0 0000 0000 000000 000000
+/// ▲ ▲ ▲ ▲ ▲▲▲▲ ▲▲▲▲ ▲▲▲▲▲▲ ▲▲▲▲▲▲
+/// │ │ │ │  │    │     │     └─────▶ source square
+/// │ │ │ │  │    │     └───────────▶ target square
+/// │ │ │ │  │    └─────────────────▶ piece moved
+/// │ │ │ │  └──────────────────────▶ promoted piece
+/// │ │ │ └─────────────────────────▶ capture flag
+/// │ │ └───────────────────────────▶ double push flag
+/// │ └─────────────────────────────▶ en passant flag
+/// └───────────────────────────────▶ castling flag
+///
+/// ┌────────────────────────────────────┐
+/// │ Binary piece representation        │
+/// ├──────┬──────┬──────────────────────┤
+/// │ Bit  │ Hex  │ Description          │
+/// ├──────┼──────┼──────────────────────┤
+/// │ 0000 │ 0x00 │ No promotion         │
+/// │ 0001 │ 0x01 │ White Rook           │
+/// │ 0010 │ 0x02 │ White Knight         │
+/// │ 0011 │ 0x03 │ White Bishop         │
+/// │ 0100 │ 0x04 │ White Queen          │
+/// │ 0101 │ 0x05 │ White King           │
+/// │ 0110 │ 0x06 │ Black Pawn           │
+/// │ 0111 │ 0x07 │ Black Rook           │
+/// │ 1000 │ 0x08 │ Black Knight         │
+/// │ 1001 │ 0x09 │ Black Bishop         │
+/// │ 1010 │ 0x0A │ Black Queen          │
+/// │ 1011 │ 0x0B │ Black King           │
+/// └──────┴──────┴──────────────────────┘
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Move(u32);
 
 impl Move {
     pub fn new(

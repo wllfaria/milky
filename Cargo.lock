@@ -133,6 +133,7 @@ name = "milky_bitboard"
 version = "0.1.0"
 dependencies = [
  "bitflags",
+ "thiserror",
 ]
 
 [[package]]
@@ -146,13 +147,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "milky_engine"
+name = "milky_cli"
 version = "0.1.0"
-dependencies = [
- "milky_bitboard",
- "milky_chess",
- "milky_fen",
-]
 
 [[package]]
 name = "milky_fen"
@@ -160,6 +156,16 @@ version = "0.1.0"
 dependencies = [
  "insta",
  "milky_bitboard",
+ "thiserror",
+]
+
+[[package]]
+name = "milky_protocols"
+version = "0.1.0"
+dependencies = [
+ "milky_bitboard",
+ "milky_chess",
+ "milky_fen",
  "thiserror",
 ]
 
