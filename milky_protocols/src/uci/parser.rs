@@ -1,5 +1,5 @@
+use super::command::{GoCommand, PositionCommand, UciCommand};
 use super::error::{Error, Result};
-use super::{GoCommand, PositionCommand, UciCommand};
 
 pub fn parse_uci_command(line: &str) -> Result<UciCommand> {
     if line.is_empty() {
@@ -15,6 +15,7 @@ pub fn parse_uci_command(line: &str) -> Result<UciCommand> {
             "isready" => return Ok(UciCommand::IsReady),
             "position" => return parse_position_command(split),
             "go" => return parse_go_command(split),
+
             "stop" => todo!("stop not yet implemented"),
             "ponderhit" => todo!("ponderhit not yet implemented"),
             "quit" => todo!("quit not yet implemented"),
@@ -53,7 +54,11 @@ fn parse_position_command<'a>(mut split: impl Iterator<Item = &'a str>) -> Resul
             // abbreviations, so it should always contains 6 parts
             let fen = split.by_ref().take(6).collect::<Vec<_>>().join(" ");
             let fen = milky_fen::parse_fen_string(&fen)?;
-            PositionCommand { fen, moves: vec![] }
+            PositionCommand {
+                fen,
+                moves: vec![],
+                start_position: false,
+            }
         }
         other => {
             return Err(Error::InvalidCommand(format!(
@@ -125,7 +130,7 @@ fn parse_go_command<'a>(mut split: impl Iterator<Item = &'a str>) -> Result<UciC
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::uci::{GoCommand, START_POSITION};
+    use crate::uci::command::{GoCommand, START_POSITION};
 
     #[test]
     fn test_parse_uci_protocol_command() {
@@ -211,6 +216,7 @@ mod tests {
         let expected = PositionCommand {
             fen: milky_fen::parse_fen_string("8/1B6/8/5p2/8/8/5Qrq/1K1R2bk w - - 0 1").unwrap(),
             moves: vec![],
+            start_position: false,
         };
         assert_eq!(result, UciCommand::Position(expected));
 
@@ -220,6 +226,7 @@ mod tests {
         let expected = PositionCommand {
             fen: milky_fen::parse_fen_string("8/1B6/8/5p2/8/8/5Qrq/1K1R2bk w - - 0 1").unwrap(),
             moves: vec![],
+            start_position: false,
         };
         assert_eq!(result, UciCommand::Position(expected));
 
@@ -229,6 +236,7 @@ mod tests {
         let expected = PositionCommand {
             fen: milky_fen::parse_fen_string("8/1B6/8/5p2/8/8/5Qrq/1K1R2bk w - - 0 1").unwrap(),
             moves: vec![],
+            start_position: false,
         };
         assert_eq!(result, UciCommand::Position(expected));
     }
@@ -239,6 +247,7 @@ mod tests {
         let result = parse_uci_command(command).unwrap();
 
         let expected = PositionCommand {
+            start_position: true,
             fen: milky_fen::parse_fen_string(START_POSITION).unwrap(),
             moves: vec![
                 "e2e4".into(),
@@ -256,6 +265,7 @@ mod tests {
 
         let expected = PositionCommand {
             fen: milky_fen::parse_fen_string(START_POSITION).unwrap(),
+            start_position: true,
             moves: vec![
                 "e2e4".into(),
                 "e7e5".into(),
