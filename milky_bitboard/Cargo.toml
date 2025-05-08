@@ -6,3 +6,5 @@ lints.workspace = true
 
 [dependencies]
 bitflags = "2.9.0"
+
+thiserror.workspace = true

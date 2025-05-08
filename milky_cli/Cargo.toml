@@ -1,0 +1,4 @@
+[package]
+name = "milky_cli"
+version.workspace = true
+edition.workspace = true

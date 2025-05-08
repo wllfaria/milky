@@ -19,7 +19,7 @@ struct UnparsedFenParts<'fen> {
     full_move_counter: Option<&'fen str>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FenParts {
     pub positions: [BitBoard; 12],
     pub white_occupancy: BitBoard,
@@ -70,19 +70,19 @@ fn split_fen_string<'fen>(fen_string: &'fen str) -> Result<UnparsedFenParts<'fen
 
     let positions = parts
         .next()
-        .ok_or(Error::MalformedFenString("Malformepd FEN string".into()))?;
+        .ok_or(Error::MalformedFenString("Malformed FEN string".into()))?;
 
     let side_to_move = parts
         .next()
-        .ok_or(Error::MalformedFenString("Malformepd FEN string".into()))?;
+        .ok_or(Error::MalformedFenString("Malformed FEN string".into()))?;
 
     let castling_rights = parts
         .next()
-        .ok_or(Error::MalformedFenString("Malformepd FEN string".into()))?;
+        .ok_or(Error::MalformedFenString("Malformed FEN string".into()))?;
 
     let en_passant = parts
         .next()
-        .ok_or(Error::MalformedFenString("Malformepd FEN string".into()))?;
+        .ok_or(Error::MalformedFenString("Malformed FEN string".into()))?;
 
     let half_move_clock = parts.next();
 
@@ -170,7 +170,7 @@ fn parse_en_passant(en_passant_str: &str) -> Result<Square> {
         return Ok(Square::OffBoard);
     }
 
-    Square::from_algebraic_str(en_passant_str).map_err(Error::MalformedFenString)
+    Square::from_algebraic_str(en_passant_str).map_err(|e| Error::MalformedFenString(e.to_string()))
 }
 
 fn parse_half_move_clock(half_move_clock_str: Option<&str>) -> Result<u32> {

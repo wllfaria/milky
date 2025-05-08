@@ -1,11 +1,11 @@
-mod moves;
 mod random;
 
 use std::sync::OnceLock;
 
-use milky_bitboard::{BitBoard, CastlingRights, Pieces, Rank, Side, Square};
+use milky_bitboard::{
+    BitBoard, CastlingRights, Move, MoveFlags, Pieces, PromotedPieces, Rank, Side, Square,
+};
 use milky_fen::FenParts;
-use moves::{Move, MoveFlags, PromotedPieces};
 use random::Random;
 
 static PAWN_ATTACKS: OnceLock<[[BitBoard; 64]; 2]> = OnceLock::new();
