@@ -6,4 +6,6 @@ pub type Result<R> = std::result::Result<R, Error>;
 pub enum Error {
     #[error("{0}")]
     InvalidSquare(String),
+    #[error("{0}")]
+    InvalidPiece(String),
 }

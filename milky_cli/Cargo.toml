@@ -6,3 +6,4 @@ edition.workspace = true
 [dependencies]
 milky_chess.workspace = true
 milky_protocols.workspace = true
+milky_fen.workspace = true

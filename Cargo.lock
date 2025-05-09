@@ -151,6 +151,7 @@ name = "milky_cli"
 version = "0.1.0"
 dependencies = [
  "milky_chess",
+ "milky_fen",
  "milky_protocols",
 ]
 

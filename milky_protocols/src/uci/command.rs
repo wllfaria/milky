@@ -1,3 +1,4 @@
+use milky_bitboard::{PromotedPieces, Square};
 use milky_fen::FenParts;
 
 use super::error::Result;
@@ -45,7 +46,11 @@ pub enum UciCommand {
     /// string. If one command is not sent its value should be interpreted as it would not
     /// influence the search.
     Go(GoCommand),
+    /// Quit the program as soon as possible
+    Quit,
 
+    /// This must be sent after receiving the uci command to identify the engine
+    Id(IdCommand),
     /// Must be sent after the id and optional options to tell the GUI that the engine has sent all
     /// infos and is ready in uci mode.
     UciOk,
@@ -84,7 +89,9 @@ impl std::fmt::Display for UciCommand {
             UciCommand::IsReady => write!(f, "isready"),
             UciCommand::Position(position_command) => write!(f, "{position_command}"),
             UciCommand::Go(go_command) => write!(f, "{go_command}"),
+            UciCommand::Quit => write!(f, "quit"),
 
+            UciCommand::Id(id_command) => write!(f, "{id_command}"),
             UciCommand::UciOk => write!(f, "uciok"),
             UciCommand::ReadyOk => write!(f, "readyok"),
             UciCommand::BestMove(best_move_command) => write!(f, "{best_move_command}"),
@@ -93,10 +100,23 @@ impl std::fmt::Display for UciCommand {
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct PartialMove {
+    pub source: Square,
+    pub target: Square,
+    pub promotion: PromotedPieces,
+}
+
+impl std::fmt::Display for PartialMove {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{}{}", self.source, self.target, self.promotion)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PositionCommand {
     pub start_position: bool,
     pub fen: FenParts,
-    pub moves: Vec<String>,
+    pub moves: Vec<PartialMove>,
 }
 
 impl Default for PositionCommand {
@@ -145,6 +165,28 @@ impl std::fmt::Display for GoCommand {
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct IdCommand {
+    name: &'static str,
+    author: &'static str,
+}
+
+impl Default for IdCommand {
+    fn default() -> Self {
+        Self {
+            name: "milky",
+            author: "wiru",
+        }
+    }
+}
+
+impl std::fmt::Display for IdCommand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "id name {}", self.name)?;
+        write!(f, "id author {}", self.author)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct BestMoveCommand {
     best_move: String,
     ponder: Option<String>,
@@ -186,12 +228,27 @@ mod tests {
         assert_eq!(command_str, "bestmove e2e4");
     }
 
+    fn make_move(move_str: &str) -> PartialMove {
+        let source = Square::from_algebraic_str(&move_str[0..2]).unwrap();
+        let target = Square::from_algebraic_str(&move_str[2..4]).unwrap();
+        let promotion = if move_str.len() == 5 {
+            PromotedPieces::from_algebraic_str(&move_str[4..]).unwrap()
+        } else {
+            PromotedPieces::NoPromotion
+        };
+        PartialMove {
+            source,
+            target,
+            promotion,
+        }
+    }
+
     #[test]
     fn test_position_command_print() {
         let command = PositionCommand {
             start_position: true,
             fen: parse_fen_string(START_POSITION).unwrap(),
-            moves: vec!["e2e4".into(), "e7e5".into()],
+            moves: vec![make_move("e2e4"), make_move("e7e5")],
         };
         let command_str = command.to_string();
         assert_eq!(command_str, "position startpos moves e2e4 e7e5");
@@ -215,7 +272,7 @@ mod tests {
         let command = PositionCommand {
             start_position: false,
             fen: parse_fen_string("8/8/8/8/8/8/8/8 w KQkq - 0 1").unwrap(),
-            moves: vec!["e2e4".into(), "e7e5".into()],
+            moves: vec![make_move("e2e4"), make_move("e7e5")],
         };
         let command_str = command.to_string();
         assert_eq!(

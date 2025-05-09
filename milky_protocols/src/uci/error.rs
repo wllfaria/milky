@@ -10,6 +10,8 @@ pub enum Error {
     InvalidCommand(String),
     #[error("{0}")]
     Fen(#[from] milky_fen::Error),
+    #[error("{0}")]
+    InvalidMove(#[from] milky_bitboard::Error),
 }
 
 pub type Result<R> = std::result::Result<R, Error>;
