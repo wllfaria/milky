@@ -1,4 +1,6 @@
-use super::command::{GoCommand, PositionCommand, UciCommand};
+use milky_bitboard::{PromotedPieces, Square};
+
+use super::command::{GoCommand, PartialMove, PositionCommand, UciCommand};
 use super::error::{Error, Result};
 
 pub fn parse_uci_command(line: &str) -> Result<UciCommand> {
@@ -15,10 +17,10 @@ pub fn parse_uci_command(line: &str) -> Result<UciCommand> {
             "isready" => return Ok(UciCommand::IsReady),
             "position" => return parse_position_command(split),
             "go" => return parse_go_command(split),
+            "quit" => return Ok(UciCommand::Quit),
 
             "stop" => todo!("stop not yet implemented"),
             "ponderhit" => todo!("ponderhit not yet implemented"),
-            "quit" => todo!("quit not yet implemented"),
             // Add more known commands as needed
             _ => continue,
         }
@@ -83,7 +85,20 @@ fn parse_position_command<'a>(mut split: impl Iterator<Item = &'a str>) -> Resul
                 "move string must be in short algebraic notation, but got: {mov}"
             )));
         }
-        position.moves.push(mov.to_string());
+
+        let source = Square::from_algebraic_str(&mov[0..2])?;
+        let target = Square::from_algebraic_str(&mov[2..4])?;
+        let promotion = if mov.len() == 5 {
+            PromotedPieces::from_algebraic_str(&mov[4..])?
+        } else {
+            PromotedPieces::NoPromotion
+        };
+
+        position.moves.push(PartialMove {
+            source,
+            target,
+            promotion,
+        })
     }
 
     Ok(UciCommand::Position(position))
@@ -241,6 +256,21 @@ mod tests {
         assert_eq!(result, UciCommand::Position(expected));
     }
 
+    fn make_move(move_str: &str) -> PartialMove {
+        let source = Square::from_algebraic_str(&move_str[0..2]).unwrap();
+        let target = Square::from_algebraic_str(&move_str[2..4]).unwrap();
+        let promotion = if move_str.len() == 5 {
+            PromotedPieces::from_algebraic_str(&move_str[4..]).unwrap()
+        } else {
+            PromotedPieces::NoPromotion
+        };
+        PartialMove {
+            source,
+            target,
+            promotion,
+        }
+    }
+
     #[test]
     fn test_parse_position_startpos_with_moves_command() {
         let command = "position startpos moves e2e4 e7e5 g1f3 b8c6 f1b5";
@@ -250,11 +280,11 @@ mod tests {
             start_position: true,
             fen: milky_fen::parse_fen_string(START_POSITION).unwrap(),
             moves: vec![
-                "e2e4".into(),
-                "e7e5".into(),
-                "g1f3".into(),
-                "b8c6".into(),
-                "f1b5".into(),
+                make_move("e2e4"),
+                make_move("e7e5"),
+                make_move("g1f3"),
+                make_move("b8c6"),
+                make_move("f1b5"),
             ],
         };
         assert_eq!(result, UciCommand::Position(expected));
@@ -267,11 +297,11 @@ mod tests {
             fen: milky_fen::parse_fen_string(START_POSITION).unwrap(),
             start_position: true,
             moves: vec![
-                "e2e4".into(),
-                "e7e5".into(),
-                "g1f3".into(),
-                "b8c6".into(),
-                "f1b5".into(),
+                make_move("e2e4"),
+                make_move("e7e5"),
+                make_move("g1f3"),
+                make_move("b8c6"),
+                make_move("f1b5"),
             ],
         };
         assert_eq!(result, UciCommand::Position(expected));

@@ -4,6 +4,7 @@ mod error;
 mod moves;
 mod square;
 
+pub use error::Error;
 pub use moves::{Move, MoveFlags, PromotedPieces};
 pub use square::Square;
 

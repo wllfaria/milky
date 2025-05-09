@@ -63,6 +63,82 @@ static CASTLING_RIGHTS: [u8; 64] = [
 ];
 
 #[rustfmt::skip]
+static PIECE_SCORE: [i32; 12] = [
+    100,  // white pawn score
+    500,  // white rook score
+    300,  // white knight scrore
+    350,  // white bishop score
+   1000,  // white queen score
+  10000,  // white king score
+   -100,  // black pawn score
+   -500,  // black rook score
+   -300,  // black knight scrore
+   -350,  // black bishop score
+  -1000,  // black queen score
+ -10000,  // black king score
+];
+
+#[rustfmt::skip]
+static PAWN_POS_SCORE: [i32; 64] = [
+    90,  90,  90,  90,  90,  90,  90,  90,
+    30,  30,  30,  40,  40,  30,  30,  30,
+    20,  20,  20,  30,  30,  30,  20,  20,
+    10,  10,  10,  20,  20,  10,  10,  10,
+     5,   5,  10,  20,  20,   5,   5,   5,
+     0,   0,   0,   5,   5,   0,   0,   0,
+     0,   0,   0, -10, -10,   0,   0,   0,
+     0,   0,   0,   0,   0,   0,   0,   0,
+];
+
+#[rustfmt::skip]
+static KNIGHT_POS_SCORE: [i32; 64] = [
+    -5,   0,   0,   0,   0,   0,   0,  -5,
+    -5,   0,   0,  10,  10,   0,   0,  -5,
+    -5,   5,  20,  20,  20,  20,   5,  -5,
+    -5,  10,  20,  30,  30,  20,  10,  -5,
+    -5,  10,  20,  30,  30,  20,  10,  -5,
+    -5,   5,  20,  10,  10,  20,   5,  -5,
+    -5,   0,   0,   0,   0,   0,   0,  -5,
+    -5, -10,   0,   0,   0,   0, -10,  -5,
+];
+
+#[rustfmt::skip]
+static BISHOP_POS_SCORE: [i32; 64] = [
+     0,   0,   0,   0,   0,   0,   0,   0,
+     0,   0,   0,   0,   0,   0,   0,   0,
+     0,   0,   0,  10,  10,   0,   0,   0,
+     0,   0,  10,  20,  20,  10,   0,   0,
+     0,   0,  10,  20,  20,  10,   0,   0,
+     0,  10,   0,   0,   0,   0,  10,   0,
+     0,  30,   0,   0,   0,   0,  30,   0,
+     0,   0, -10,   0,   0, -10,   0,   0,
+];
+
+#[rustfmt::skip]
+static ROOK_POS_SCORE: [i32; 64] = [
+    50,  50,  50,  50,  50,  50,  50,  50,
+    50,  50,  50,  50,  50,  50,  50,  50,
+     0,   0,  10,  20,  20,  10,   0,   0,
+     0,   0,  10,  20,  20,  10,   0,   0,
+     0,   0,  10,  20,  20,  10,   0,   0,
+     0,   0,  10,  20,  20,  10,   0,   0,
+     0,   0,  10,  20,  20,  10,   0,   0,
+     0,   0,   0,  20,  20,   0,   0,   0,
+];
+
+#[rustfmt::skip]
+static KING_POS_SCORE: [i32; 64] = [
+     0,   0,   0,   0,   0,   0,   0,   0,
+     0,   0,   5,   5,   5,   5,   0,   0,
+     0,   5,   5,  10,  10,   5,   5,   0,
+     0,   5,  10,  20,  20,  10,   5,   0,
+     0,   5,  10,  20,  20,  10,   5,   0,
+     0,   0,   5,  10,  10,   5,   0,   0,
+     0,   5,   5,  -5,  -5,   0,   5,   0,
+     0,   0,   5,   0, -15,   0,  10,   0,
+];
+
+#[rustfmt::skip]
 static BISHOP_RELEVANT_OCCUPANCIES: [u32; 64] = [
     6, 5, 5, 5, 5, 5, 5, 6,
     5, 5, 5, 5, 5, 5, 5, 5,
@@ -586,9 +662,52 @@ impl Milky {
         }
     }
 
-    pub fn push_move(&mut self, piece_move: Move) {
+    fn push_move(&mut self, piece_move: Move) {
         self.moves[self.move_count] = piece_move;
         self.move_count += 1;
+    }
+
+    pub fn search_position(&mut self, _depth: u8) -> Move {
+        Move::new(
+            Square::E2,
+            Square::E4,
+            Pieces::WhitePawn,
+            PromotedPieces::NoPromotion,
+            MoveFlags::DOUBLE_PUSH,
+        )
+    }
+
+    pub fn evaluate_position(&self) -> i32 {
+        let mut score = 0;
+
+        for (idx, board) in self.boards.into_iter().enumerate() {
+            let piece = Pieces::from_usize_unchecked(idx);
+
+            for square in board {
+                score += PIECE_SCORE[idx];
+
+                match piece {
+                    Pieces::WhitePawn => score += PAWN_POS_SCORE[square as usize],
+                    Pieces::WhiteRook => score += ROOK_POS_SCORE[square as usize],
+                    Pieces::WhiteKnight => score += KNIGHT_POS_SCORE[square as usize],
+                    Pieces::WhiteBishop => score += BISHOP_POS_SCORE[square as usize],
+                    Pieces::WhiteKing => score += KING_POS_SCORE[square as usize],
+
+                    Pieces::BlackPawn => score -= PAWN_POS_SCORE[square.mirror() as usize],
+                    Pieces::BlackRook => score -= ROOK_POS_SCORE[square.mirror() as usize],
+                    Pieces::BlackKnight => score -= KNIGHT_POS_SCORE[square.mirror() as usize],
+                    Pieces::BlackBishop => score -= BISHOP_POS_SCORE[square.mirror() as usize],
+                    Pieces::BlackKing => score -= KING_POS_SCORE[square.mirror() as usize],
+                    _ => {}
+                }
+            }
+        }
+
+        match self.side_to_move {
+            Side::White => score,
+            Side::Black => -score,
+            _ => unreachable!(),
+        }
     }
 
     pub fn load_fen(&mut self, fen_parts: FenParts) {

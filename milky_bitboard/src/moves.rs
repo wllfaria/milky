@@ -1,5 +1,5 @@
 use crate::error::Result;
-use crate::{BitBoard, Pieces, Side, Square};
+use crate::{BitBoard, Error, Pieces, Side, Square};
 
 bitflags::bitflags! {
     /// ┌──────┬──────────────────┐
@@ -37,7 +37,7 @@ pub enum PromotedPieces {
 impl std::fmt::Display for PromotedPieces {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PromotedPieces::NoPromotion => write!(f, " "),
+            PromotedPieces::NoPromotion => write!(f, ""),
             PromotedPieces::Knight => write!(f, "n"),
             PromotedPieces::Bishop => write!(f, "b"),
             PromotedPieces::Rook => write!(f, "r"),
@@ -55,6 +55,18 @@ impl PromotedPieces {
             3 => Self::Rook,
             4 => Self::Queen,
             _ => unreachable!(),
+        }
+    }
+
+    pub fn from_algebraic_str(value: &str) -> Result<Self> {
+        match value {
+            "n" => Ok(Self::Knight),
+            "b" => Ok(Self::Bishop),
+            "r" => Ok(Self::Rook),
+            "q" => Ok(Self::Queen),
+            _ => Err(Error::InvalidPiece(format!(
+                "Invalid promotion piece: {value}"
+            ))),
         }
     }
 
@@ -202,24 +214,4 @@ impl std::fmt::Display for Move {
             self.promotion().to_string().to_lowercase()
         )
     }
-}
-
-#[macro_export]
-macro_rules! encode_move {
-    (
-        $source:expr,
-        $target:expr,
-        $piece:expr,
-        $promoted:expr,
-        $flags:expr
-        $(,)?
-    ) => {{
-        $crate::moves::Move::new(
-            ($source as u32)
-                | (($target as u32) << 6)
-                | (($piece as u32) << 12)
-                | (($promoted as u32) << 16)
-                | (($flags.bits() as u32) << 20),
-        )
-    }};
 }

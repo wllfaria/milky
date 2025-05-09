@@ -33,17 +33,25 @@ impl Square {
         if value > Square::H1 as u64 { None } else { Some(Square::from_u64_unchecked(value)) }
     }
 
+    pub fn mirror(&self) -> Square {
+        let index = *self as u64;
+        let rank = index / 8;
+        let file = index % 8;
+        let mirrored_index = (7 - rank) * 8 + file;
+        unsafe { std::mem::transmute(mirrored_index) }
+    }
+
     #[rustfmt::skip]
     pub fn is_on_rank(&self, rank: Rank) -> bool {
         match rank {
-            Rank::First =>   *self >= Self::A1 && *self <= Square::H1,
-            Rank::Second =>  *self >= Self::A2 && *self <= Square::H2,
-            Rank::Third =>   *self >= Self::A3 && *self <= Square::H3,
-            Rank::Fourth =>  *self >= Self::A4 && *self <= Square::H4,
-            Rank::Fifth =>   *self >= Self::A5 && *self <= Square::H5,
-            Rank::Sixth =>   *self >= Self::A6 && *self <= Square::H6,
-            Rank::Seventh => *self >= Self::A7 && *self <= Square::H7,
-            Rank::Eighth =>  *self >= Self::A8 && *self <= Square::H8,
+            Rank::First =>   *self >= Self::A1 && *self <= Self::H1,
+            Rank::Second =>  *self >= Self::A2 && *self <= Self::H2,
+            Rank::Third =>   *self >= Self::A3 && *self <= Self::H3,
+            Rank::Fourth =>  *self >= Self::A4 && *self <= Self::H4,
+            Rank::Fifth =>   *self >= Self::A5 && *self <= Self::H5,
+            Rank::Sixth =>   *self >= Self::A6 && *self <= Self::H6,
+            Rank::Seventh => *self >= Self::A7 && *self <= Self::H7,
+            Rank::Eighth =>  *self >= Self::A8 && *self <= Self::H8,
         }
     }
 
