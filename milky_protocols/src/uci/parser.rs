@@ -106,7 +106,7 @@ fn parse_position_command<'a>(
 }
 
 fn parse_go_command<'a>(mut split: impl Iterator<Item = &'a str>) -> Result<Option<UciCommand>> {
-    let mut command = GoCommand { depth: 245 };
+    let mut command = GoCommand { depth: 1 };
 
     while let Some(next) = split.next() {
         match next {
