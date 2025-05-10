@@ -2,7 +2,9 @@ use std::io::BufRead;
 
 use milky_chess::{Milky, MoveKind};
 use milky_protocols::Protocol;
-use milky_protocols::uci::command::{BestMoveCommand, GoCommand, PositionCommand, UciCommand};
+use milky_protocols::uci::command::{
+    BestMoveCommand, GoCommand, PositionCommand, START_POSITION, UciCommand,
+};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     milky_chess::init_attack_tables();
@@ -13,11 +15,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut handle = stdin.lock();
     let mut line = String::new();
 
+    // milky.load_fen(milky_fen::parse_fen_string(START_POSITION).unwrap());
+
+    // for _ in 0..20 {
+    //     milky.search_position(3);
+    //     milky.make_move(milky.best_move, MoveKind::AllMoves);
+    // }
+    //
+    // milky.print_board();
+
     loop {
         line.clear();
         handle.read_line(&mut line)?;
 
-        match uci.parse_command(&line)? {
+        let Some(command) = uci.parse_command(&line)? else {
+            continue;
+        };
+
+        match command {
             UciCommand::Uci => {
                 println!("{}", UciCommand::Id(Default::default()));
                 println!("{}", UciCommand::UciOk);
@@ -25,10 +40,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             UciCommand::Position(position) => load_position(&mut milky, position),
             UciCommand::IsReady => println!("{}", UciCommand::ReadyOk),
             UciCommand::Quit => break,
-            UciCommand::Go(go) => {
-                let best_move = handle_go_command(&mut milky, go);
-                println!("{best_move}");
-            }
+            UciCommand::Go(go) => println!("{}", handle_go_command(&mut milky, go)),
 
             UciCommand::Debug(value) => println!("{value:?}"),
 
@@ -70,5 +82,8 @@ fn load_position(milky: &mut Milky, position: PositionCommand) {
 fn handle_go_command(milky: &mut Milky, go_command: GoCommand) -> BestMoveCommand {
     milky.search_position(go_command.depth);
 
-    todo!()
+    BestMoveCommand {
+        best_move: milky.best_move.to_string(),
+        ponder: None,
+    }
 }

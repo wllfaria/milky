@@ -75,7 +75,7 @@ pub enum UciCommand {
 }
 
 impl UciCommand {
-    pub fn parse(line: &str) -> Result<UciCommand> {
+    pub fn parse(line: &str) -> Result<Option<UciCommand>> {
         parse_uci_command(line)
     }
 }
@@ -188,8 +188,8 @@ impl std::fmt::Display for IdCommand {
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct BestMoveCommand {
-    best_move: String,
-    ponder: Option<String>,
+    pub best_move: String,
+    pub ponder: Option<String>,
 }
 
 impl std::fmt::Display for BestMoveCommand {

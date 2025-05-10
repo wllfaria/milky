@@ -1,5 +1,6 @@
 mod random;
 
+use std::num::Wrapping;
 use std::sync::OnceLock;
 
 use milky_bitboard::{
@@ -630,9 +631,12 @@ pub struct Milky {
     pub side_to_move: Side,
     pub en_passant: Square,
     pub castling_rights: CastlingRights,
+    pub ply: u16,
     pub moves: [Move; 256],
     pub move_count: usize,
     pub snapshots: Vec<BoardSnapshot>,
+    pub best_move: Move,
+    pub nodes: u64,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
@@ -659,6 +663,9 @@ impl Milky {
             snapshots: Vec::new(),
             moves: [Move::default(); 256],
             move_count: 0,
+            ply: 0,
+            best_move: Move::default(),
+            nodes: 0,
         }
     }
 
@@ -667,14 +674,55 @@ impl Milky {
         self.move_count += 1;
     }
 
-    pub fn search_position(&mut self, _depth: u8) -> Move {
-        Move::new(
-            Square::E2,
-            Square::E4,
-            Pieces::WhitePawn,
-            PromotedPieces::NoPromotion,
-            MoveFlags::DOUBLE_PUSH,
-        )
+    fn negamax(&mut self, mut alpha: Wrapping<i32>, beta: Wrapping<i32>, depth: u8) -> i32 {
+        if depth == 0 {
+            return self.evaluate_position();
+        }
+
+        self.nodes += 1;
+
+        let mut best_move_so_far = Move::default();
+        let old_alpha = alpha;
+
+        self.generate_moves();
+
+        for piece_move in self.moves.into_iter().take(self.move_count) {
+            self.ply += 1;
+
+            if !self.make_move(piece_move, MoveKind::AllMoves) {
+                self.ply -= 1;
+                continue;
+            }
+
+            let score = -Wrapping(self.negamax(-beta, -alpha, depth - 1));
+
+            self.ply -= 1;
+
+            self.undo_move();
+
+            if score >= beta {
+                return beta.0;
+            }
+
+            if score > alpha {
+                alpha = score;
+
+                if self.ply == 0 {
+                    best_move_so_far = piece_move;
+                }
+            }
+        }
+
+        if old_alpha != alpha {
+            self.best_move = best_move_so_far;
+        }
+
+        alpha.0
+    }
+
+    pub fn search_position(&mut self, depth: u8) -> Move {
+        let _score = self.negamax(Wrapping(i32::MIN + 1), Wrapping(i32::MAX), depth);
+        self.best_move
     }
 
     pub fn evaluate_position(&self) -> i32 {
@@ -939,7 +987,6 @@ impl Milky {
 
     pub fn generate_moves(&mut self) {
         self.move_count = 0;
-
         for (idx, board) in self.boards.into_iter().enumerate() {
             let piece = Pieces::from_usize_unchecked(idx);
 
