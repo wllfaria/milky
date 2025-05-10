@@ -674,12 +674,60 @@ impl Milky {
         self.move_count += 1;
     }
 
+    fn quiescence(&mut self, mut alpha: Wrapping<i32>, beta: Wrapping<i32>) -> i32 {
+        let evaluation = self.evaluate_position();
+
+        if evaluation >= beta.0 {
+            return beta.0;
+        }
+
+        if evaluation > alpha.0 {
+            alpha = Wrapping(evaluation);
+        }
+
+        self.generate_moves();
+
+        for piece_move in self.moves.into_iter().take(self.move_count) {
+            self.ply += 1;
+
+            if !self.make_move(piece_move, MoveKind::Captures) {
+                self.ply -= 1;
+                continue;
+            }
+
+            let score = -Wrapping(self.quiescence(-beta, -alpha));
+
+            self.ply -= 1;
+
+            self.undo_move();
+
+            if score >= beta {
+                return beta.0;
+            }
+
+            if score > alpha {
+                alpha = score;
+            }
+        }
+
+        alpha.0
+    }
+
     fn negamax(&mut self, mut alpha: Wrapping<i32>, beta: Wrapping<i32>, depth: u8) -> i32 {
         if depth == 0 {
-            return self.evaluate_position();
+            return self.quiescence(alpha, beta);
         }
 
         self.nodes += 1;
+
+        let curr_player_king = match self.side_to_move {
+            Side::White => self.boards[Pieces::WhiteKing].trailing_zeros(),
+            Side::Black => self.boards[Pieces::BlackKing].trailing_zeros(),
+            _ => unreachable!(),
+        };
+
+        let is_in_check = self.is_square_attacked(curr_player_king, self.side_to_move.enemy());
+        let mut legal_moves = 0;
 
         let mut best_move_so_far = Move::default();
         let old_alpha = alpha;
@@ -693,6 +741,8 @@ impl Milky {
                 self.ply -= 1;
                 continue;
             }
+
+            legal_moves += 1;
 
             let score = -Wrapping(self.negamax(-beta, -alpha, depth - 1));
 
@@ -710,6 +760,18 @@ impl Milky {
                 if self.ply == 0 {
                     best_move_so_far = piece_move;
                 }
+            }
+        }
+
+        // If there are no legal moves on a given position, if the king is currently in check, its
+        // a checkmate. But if the king is not in check, its a stalemate
+        if legal_moves == 0 {
+            if is_in_check {
+                // NOTE(wiru): adding ply here is important so that the engine takes into account
+                // the mate distance, otherwise it doesn't find mates on higher depths.
+                return (i32::MIN + 1000) + self.ply as i32;
+            } else {
+                return 0;
             }
         }
 

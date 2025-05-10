@@ -52,7 +52,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         milky.print_board();
-        println!("{}", milky.evaluate_position());
     }
 
     Ok(())
