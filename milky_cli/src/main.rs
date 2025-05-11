@@ -49,7 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         milky.print_board();
 
         let start = std::time::Instant::now();
-        let depth = 6;
+        let depth = 7;
         milky.search_position(depth);
         print_best_move(&milky, start, depth);
 
