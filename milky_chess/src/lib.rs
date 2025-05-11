@@ -836,6 +836,7 @@ impl Milky {
 
     fn negamax(&mut self, mut alpha: Wrapping<i32>, beta: Wrapping<i32>, mut depth: u8) -> i32 {
         self.pv_length[self.ply] = self.ply;
+        let mut found_pv = false;
 
         if depth == 0 {
             return self.quiescence(alpha, beta);
@@ -847,27 +848,34 @@ impl Milky {
 
         self.nodes += 1;
 
-        let curr_player_king = match self.side_to_move {
+        let king_square = match self.side_to_move {
             Side::White => self.boards[Pieces::WhiteKing].trailing_zeros(),
             Side::Black => self.boards[Pieces::BlackKing].trailing_zeros(),
             _ => unreachable!(),
         };
 
-        let is_in_check = self.is_square_attacked(curr_player_king, self.side_to_move.enemy());
-
-        if is_in_check {
+        let in_check = self.is_square_attacked(king_square, self.side_to_move.enemy());
+        if in_check {
+            // Extend the search depth if in check, this is useful to find forced mates or tactical
+            // defenses in dangerous positions
             depth += 1;
         }
 
-        let mut legal_moves = 0;
-
         self.generate_moves();
 
+        // If move is within the PV path from the previous iteration, give it a small bonus to
+        // improve its position in ordering.
+        //
+        // This is making the assumption that if we already have a PV, following its path is more
+        // likely to have better results.
         if self.follow_pv {
             self.enable_pv_scoring();
         }
 
+        // order moves by MVV-LVA score to improve pruning efficiency
         self.sort_moves();
+
+        let mut legal_moves = 0;
 
         for piece_move in self.moves.into_iter().take(self.move_count) {
             self.ply += 1;
@@ -879,14 +887,45 @@ impl Milky {
 
             legal_moves += 1;
 
-            let score = -Wrapping(self.negamax(-beta, -alpha, depth - 1));
+            // If we have already found a PV move earlier in this node, we assume that this move is
+            // not likely to produce a better score. So we search it with a null window. This makes
+            // the following searches to be ran with the goal of proving that they are all bad.
+            //
+            // The idea is that after the first best move, most moves won't raise alpha, if they do,
+            // we search again. This allows pruning large parts of the tree with narrow windows.
+            //
+            // Despite doing extra work in case the path does increase alpha, this is proven to
+            // happen not so often that the gains from the narrow window are valuable.
+            let score = if found_pv {
+                // Searching with a narrow window
+                let shallow = -Wrapping(self.negamax(-alpha - Wrapping(1), -alpha, depth - 1));
+
+                // If score fails low, but not high (alpha > score < beta) we need to search again,
+                // otherwise we have confirmed that the move was in fact bad.
+                if shallow > alpha && shallow < beta {
+                    -Wrapping(self.negamax(-beta, -alpha, depth - 1))
+                } else {
+                    shallow
+                }
+            } else {
+                // When not on a PV path, search is done normally. (eg: first move)
+                -Wrapping(self.negamax(-beta, -alpha, depth - 1))
+            };
 
             self.ply -= 1;
-
             self.undo_move();
 
+            // Beta cutoff
+            //
+            // If the current move is so good it exceeds beta, there is no need to search its
+            // siblings, as this move is so good the opponent would never allow it to happen.
+            //
+            // This is a fail-hard alpha/beta search
             if score >= beta {
                 if !piece_move.is_capture() {
+                    // When a non-capture (killer move) causes a beta cutoff, we store keep track of
+                    // them in order to give them a higher priority in searching when there's a
+                    // similar position.
                     self.killer_moves[1][self.ply] = self.killer_moves[0][self.ply];
                     self.killer_moves[0][self.ply] = piece_move;
                 }
@@ -894,13 +933,26 @@ impl Milky {
                 return beta.0;
             }
 
+            // Alpha raise
+            //
+            // The move is better than alpha and smaller than beta, which means it is an
+            // improvement on our previously found primary variance and we want to update our
+            // primary variance table
             if score > alpha {
+                // History heuristic
+                //
+                // Keep track of quiet moves that increases alpha by giving them a bonus based on
+                // its depth, this put those moves higher on the move sorting
                 if !piece_move.is_capture() {
                     self.history_moves[piece_move.piece()][piece_move.target()] += depth as i32;
                 }
 
                 alpha = score;
+                found_pv = true;
 
+                // Principal variation bookkeeping, the current move is the new best move, so we
+                // update the PV table at the current depth to store this move, and copy all the
+                // other PV nodes from the deeper ply
                 self.pv_table[self.ply][self.ply] = piece_move;
 
                 for i in 0..self.pv_length[self.ply + 1] {
@@ -915,15 +967,16 @@ impl Milky {
         // If there are no legal moves on a given position, if the king is currently in check, its
         // a checkmate. But if the king is not in check, its a stalemate
         if legal_moves == 0 {
-            if is_in_check {
-                // NOTE(wiru): adding ply here is important so that the engine takes into account
-                // the mate distance, otherwise it doesn't find mates on higher depths.
+            if in_check {
+                // Apply a depth-based bonus to the checkmate score to increase earliest mates
+                // positions, the earlier the best for mates
                 return (i32::MIN + 1000) + self.ply as i32;
             } else {
                 return 0;
             }
         }
 
+        // Score is less than alpha, which means the move is bad and should be ignored
         alpha.0
     }
 
