@@ -6,6 +6,33 @@ use milky_protocols::uci::command::{
     BestMoveCommand, GoCommand, PositionCommand, START_POSITION, UciCommand,
 };
 
+static FEN_A: &str = "r2q1rk1/ppp2ppp/2n1bn2/2b1p3/3pP3/3P1NPP/PPP1NPB1/R1BQ1RK1 b - - 0 9 ";
+static FEN_B: &str = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1 ";
+static FEN_C: &str = "rnbqkb1r/pp1p1pPp/8/2p1pP2/1P1P4/3P3P/P1P1P3/RNBQKBNR w KQkq e6 0 1";
+
+fn print_best_move(milky: &Milky, timer: std::time::Instant, depth: u8) {
+    println!(
+        "searching at depth {depth}, searched {} nodes, best move: {}",
+        milky.nodes, milky.pv_table[0][0],
+    );
+
+    print!("PV line: ");
+    for idx in 0..milky.pv_length[0] {
+        print!("{} ", milky.pv_table[0][idx]);
+    }
+    println!();
+
+    println!("search took: {:?}", timer.elapsed());
+}
+
+fn print_move_scores(milky: &mut Milky) {
+    println!();
+    for m in milky.moves.into_iter().take(milky.move_count) {
+        let score = milky.score_move(m);
+        println!("move: {m} score: {score}");
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     milky_chess::init_attack_tables();
     let mut milky = Milky::new();
@@ -15,14 +42,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut handle = stdin.lock();
     let mut line = String::new();
 
-    // milky.load_fen(milky_fen::parse_fen_string(START_POSITION).unwrap());
+    // #[cfg(not(debug_assertions))]
+    #[cfg(debug_assertions)]
+    {
+        milky.load_fen(milky_fen::parse_fen_string(FEN_B).unwrap());
+        milky.print_board();
 
-    // for _ in 0..20 {
-    //     milky.search_position(3);
-    //     milky.make_move(milky.best_move, MoveKind::AllMoves);
-    // }
-    //
-    // milky.print_board();
+        let start = std::time::Instant::now();
+        let depth = 5;
+        milky.search_position(depth);
+        print_best_move(&milky, start, depth);
+
+        return Ok(());
+    }
 
     loop {
         line.clear();
@@ -79,10 +111,10 @@ fn load_position(milky: &mut Milky, position: PositionCommand) {
 }
 
 fn handle_go_command(milky: &mut Milky, go_command: GoCommand) -> BestMoveCommand {
-    milky.search_position(go_command.depth);
+    let best_move = milky.search_position(go_command.depth);
 
     BestMoveCommand {
-        best_move: milky.best_move.to_string(),
+        best_move: best_move.to_string(),
         ponder: None,
     }
 }

@@ -9,6 +9,8 @@ use milky_bitboard::{
 use milky_fen::FenParts;
 use random::Random;
 
+static MAX_PLY: usize = 64;
+
 static PAWN_ATTACKS: OnceLock<[[BitBoard; 64]; 2]> = OnceLock::new();
 static KNIGHT_ATTACKS: OnceLock<[BitBoard; 64]> = OnceLock::new();
 static KING_ATTACKS: OnceLock<[BitBoard; 64]> = OnceLock::new();
@@ -77,6 +79,47 @@ static PIECE_SCORE: [i32; 12] = [
    -350,  // black bishop score
   -1000,  // black queen score
  -10000,  // black king score
+];
+
+/// # Most Valuable Victim / Less Valuable Attacker table
+///
+/// This table is used to apply a bonus to captures based on the values of the pieces. Getting a
+/// better beta cuttof on alpha-beta-search.
+///
+/// # Ordering is:
+///
+/// .  P   N   B   R   Q   K
+/// P 105 205 305 405 505 605
+/// N 104 204 304 404 504 604
+/// B 103 203 303 403 503 603
+/// R 102 202 302 402 502 602
+/// Q 101 201 301 401 501 601
+/// K 100 200 300 400 500 600
+///
+/// The table contains twice the size above to enable indexing with `Pieces`.
+///
+/// # Usage:
+/// ```rust
+/// let attacker = Pieces::WhitePawn;
+/// let victim = Pieces::BlackQueen;
+///
+/// let score = MVV_LVA[attacker][victim];
+/// ```
+#[rustfmt::skip]
+static MVV_LVA: [[i32; 12]; 12] = [
+    [105, 205, 305, 405, 505, 605,  105, 205, 305, 405, 505, 605],
+    [104, 204, 304, 404, 504, 604,  104, 204, 304, 404, 504, 604],
+    [103, 203, 303, 403, 503, 603,  103, 203, 303, 403, 503, 603],
+    [102, 202, 302, 402, 502, 602,  102, 202, 302, 402, 502, 602],
+    [101, 201, 301, 401, 501, 601,  101, 201, 301, 401, 501, 601],
+    [100, 200, 300, 400, 500, 600,  100, 200, 300, 400, 500, 600],
+
+    [105, 205, 305, 405, 505, 605,  105, 205, 305, 405, 505, 605],
+    [104, 204, 304, 404, 504, 604,  104, 204, 304, 404, 504, 604],
+    [103, 203, 303, 403, 503, 603,  103, 203, 303, 403, 503, 603],
+    [102, 202, 302, 402, 502, 602,  102, 202, 302, 402, 502, 602],
+    [101, 201, 301, 401, 501, 601,  101, 201, 301, 401, 501, 601],
+    [100, 200, 300, 400, 500, 600,  100, 200, 300, 400, 500, 600],
 ];
 
 #[rustfmt::skip]
@@ -631,12 +674,20 @@ pub struct Milky {
     pub side_to_move: Side,
     pub en_passant: Square,
     pub castling_rights: CastlingRights,
-    pub ply: u16,
+    pub ply: usize,
     pub moves: [Move; 256],
     pub move_count: usize,
     pub snapshots: Vec<BoardSnapshot>,
-    pub best_move: Move,
     pub nodes: u64,
+
+    pub killer_moves: [[Move; 64]; 2],
+    pub history_moves: [[i32; 64]; 12],
+
+    pub pv_table: [[Move; MAX_PLY]; MAX_PLY],
+    pub pv_length: [usize; MAX_PLY],
+
+    pub score_pv: bool,
+    pub follow_pv: bool,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
@@ -664,8 +715,14 @@ impl Milky {
             moves: [Move::default(); 256],
             move_count: 0,
             ply: 0,
-            best_move: Move::default(),
             nodes: 0,
+            killer_moves: [[Move::default(); 64]; 2],
+            history_moves: [[0; 64]; 12],
+
+            pv_table: [[Move::default(); MAX_PLY]; MAX_PLY],
+            pv_length: [0; MAX_PLY],
+            score_pv: false,
+            follow_pv: false,
         }
     }
 
@@ -674,7 +731,70 @@ impl Milky {
         self.move_count += 1;
     }
 
+    pub fn sort_moves(&mut self) {
+        let mut scored_moves: Vec<(i32, Move)> = self
+            .moves
+            .into_iter()
+            .take(self.move_count)
+            .map(|m| (self.score_move(m), m))
+            .collect();
+
+        scored_moves.sort_by(|a, b| b.0.cmp(&a.0));
+
+        scored_moves
+            .into_iter()
+            .enumerate()
+            .for_each(|(idx, (_, m))| self.moves[idx] = m);
+    }
+
+    fn enable_pv_scoring(&mut self) {
+        self.follow_pv = false;
+
+        for piece_move in self.moves.into_iter().take(self.move_count) {
+            if self.pv_table[0][self.ply] == piece_move {
+                self.score_pv = true;
+                self.follow_pv = true;
+            }
+        }
+    }
+
+    pub fn score_move(&mut self, piece_move: Move) -> i32 {
+        if self.score_pv && self.pv_table[0][self.ply] == piece_move {
+            self.score_pv = false;
+            return 20_000;
+        }
+
+        if piece_move.is_capture() {
+            let attacker = piece_move.piece();
+            let victim_square = piece_move.target();
+
+            // Victim is initialized as white pawn to make en-passant moves easier.
+            //
+            // Since side doesn't matter for en-passant, even when white is the attacker, white
+            // pawn takes white pawn have the same score as white capturing black.
+            let victim = self
+                .boards
+                .into_iter()
+                .enumerate()
+                .find(|(_, board)| board.get_bit(victim_square).is_set())
+                .map(|(idx, _)| Pieces::from_usize_unchecked(idx))
+                .unwrap_or(Pieces::WhitePawn);
+
+            return MVV_LVA[attacker][victim] + 10_000;
+        }
+
+        if self.killer_moves[0][self.ply] == piece_move {
+            9_000
+        } else if self.killer_moves[1][self.ply] == piece_move {
+            8_000
+        } else {
+            self.history_moves[piece_move.piece()][piece_move.target()]
+        }
+    }
+
     fn quiescence(&mut self, mut alpha: Wrapping<i32>, beta: Wrapping<i32>) -> i32 {
+        self.nodes += 1;
+
         let evaluation = self.evaluate_position();
 
         if evaluation >= beta.0 {
@@ -686,6 +806,7 @@ impl Milky {
         }
 
         self.generate_moves();
+        self.sort_moves();
 
         for piece_move in self.moves.into_iter().take(self.move_count) {
             self.ply += 1;
@@ -713,9 +834,15 @@ impl Milky {
         alpha.0
     }
 
-    fn negamax(&mut self, mut alpha: Wrapping<i32>, beta: Wrapping<i32>, depth: u8) -> i32 {
+    fn negamax(&mut self, mut alpha: Wrapping<i32>, beta: Wrapping<i32>, mut depth: u8) -> i32 {
+        self.pv_length[self.ply] = self.ply;
+
         if depth == 0 {
             return self.quiescence(alpha, beta);
+        }
+
+        if self.ply > MAX_PLY - 1 {
+            return self.evaluate_position();
         }
 
         self.nodes += 1;
@@ -727,12 +854,20 @@ impl Milky {
         };
 
         let is_in_check = self.is_square_attacked(curr_player_king, self.side_to_move.enemy());
+
+        if is_in_check {
+            depth += 1;
+        }
+
         let mut legal_moves = 0;
 
-        let mut best_move_so_far = Move::default();
-        let old_alpha = alpha;
-
         self.generate_moves();
+
+        if self.follow_pv {
+            self.enable_pv_scoring();
+        }
+
+        self.sort_moves();
 
         for piece_move in self.moves.into_iter().take(self.move_count) {
             self.ply += 1;
@@ -751,15 +886,29 @@ impl Milky {
             self.undo_move();
 
             if score >= beta {
+                if !piece_move.is_capture() {
+                    self.killer_moves[1][self.ply] = self.killer_moves[0][self.ply];
+                    self.killer_moves[0][self.ply] = piece_move;
+                }
+
                 return beta.0;
             }
 
             if score > alpha {
+                if !piece_move.is_capture() {
+                    self.history_moves[piece_move.piece()][piece_move.target()] += depth as i32;
+                }
+
                 alpha = score;
 
-                if self.ply == 0 {
-                    best_move_so_far = piece_move;
+                self.pv_table[self.ply][self.ply] = piece_move;
+
+                for i in 0..self.pv_length[self.ply + 1] {
+                    self.pv_table[self.ply][self.ply + 1 + i] =
+                        self.pv_table[self.ply + 1][self.ply + 1 + i];
                 }
+
+                self.pv_length[self.ply] = self.pv_length[self.ply + 1];
             }
         }
 
@@ -775,16 +924,25 @@ impl Milky {
             }
         }
 
-        if old_alpha != alpha {
-            self.best_move = best_move_so_far;
-        }
-
         alpha.0
     }
 
     pub fn search_position(&mut self, depth: u8) -> Move {
-        let _score = self.negamax(Wrapping(i32::MIN + 1), Wrapping(i32::MAX), depth);
-        self.best_move
+        self.nodes = 0;
+        self.score_pv = false;
+        self.follow_pv = false;
+
+        self.killer_moves = [[Move::default(); 64]; 2];
+        self.history_moves = [[0; 64]; 12];
+        self.pv_table = [[Move::default(); MAX_PLY]; MAX_PLY];
+        self.pv_length = [0; MAX_PLY];
+
+        for curr_depth in 1..=depth {
+            self.follow_pv = true;
+            self.negamax(Wrapping(i32::MIN + 1), Wrapping(i32::MAX), curr_depth);
+        }
+
+        self.pv_table[0][0]
     }
 
     pub fn evaluate_position(&self) -> i32 {

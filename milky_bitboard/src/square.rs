@@ -156,3 +156,17 @@ impl std::ops::Shl<Square> for u64 {
         self << rhs as u64
     }
 }
+
+impl std::ops::Index<Square> for [i32; 64] {
+    type Output = i32;
+
+    fn index(&self, index: Square) -> &Self::Output {
+        &self[index as usize]
+    }
+}
+
+impl std::ops::IndexMut<Square> for [i32; 64] {
+    fn index_mut(&mut self, index: Square) -> &mut Self::Output {
+        &mut self[index as usize]
+    }
+}
