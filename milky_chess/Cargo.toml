@@ -16,3 +16,7 @@ divan = "0.1.21"
 [[bench]]
 name = "perft"
 harness = false
+
+[[bench]]
+name = "search"
+harness = false

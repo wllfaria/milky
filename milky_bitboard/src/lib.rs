@@ -162,6 +162,36 @@ impl std::ops::IndexMut<Pieces> for [BitBoard; 12] {
     }
 }
 
+impl std::ops::Index<Pieces> for [[i32; 12]; 12] {
+    type Output = [i32; 12];
+
+    fn index(&self, index: Pieces) -> &Self::Output {
+        &self[index as usize]
+    }
+}
+
+impl std::ops::Index<Pieces> for [i32; 12] {
+    type Output = i32;
+
+    fn index(&self, index: Pieces) -> &Self::Output {
+        &self[index as usize]
+    }
+}
+
+impl std::ops::Index<Pieces> for [[i32; 64]; 12] {
+    type Output = [i32; 64];
+
+    fn index(&self, index: Pieces) -> &Self::Output {
+        &self[index as usize]
+    }
+}
+
+impl std::ops::IndexMut<Pieces> for [[i32; 64]; 12] {
+    fn index_mut(&mut self, index: Pieces) -> &mut Self::Output {
+        &mut self[index as usize]
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub enum Side {
     White,
