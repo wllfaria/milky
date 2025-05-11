@@ -905,7 +905,6 @@ impl Milky {
         self.sort_moves();
 
         let mut legal_moves = 0;
-        let mut found_pv = false;
         let mut moves_searched = 0;
 
         for piece_move in self.moves.into_iter().take(self.move_count) {
@@ -916,28 +915,7 @@ impl Milky {
                 continue;
             }
 
-            // If we have already found a PV move earlier in this node, we assume that this move is
-            // not likely to produce a better score. So we search it with a null window. This makes
-            // the following searches to be ran with the goal of proving that they are all bad.
-            //
-            // The idea is that after the first best move, most moves won't raise alpha, if they do,
-            // we search again. This allows pruning large parts of the tree with narrow windows.
-            //
-            // Despite doing extra work in case the path does increase alpha, this is proven to
-            // happen not so often that the gains from the narrow window are valuable.
-            let score = if found_pv {
-                // Searching with a narrow window
-                let shallow = -Wrapping(self.negamax(-alpha - Wrapping(1), -alpha, depth - 1));
-
-                // If score fails low, but not high (alpha > score < beta) we need to search again,
-                // otherwise we have confirmed that the move was in fact bad.
-                if shallow > alpha && shallow < beta {
-                    -Wrapping(self.negamax(-beta, -alpha, depth - 1))
-                } else {
-                    shallow
-                }
-            } else if moves_searched == 0 {
-                // On the first move, search is done full depth
+            let score = if moves_searched == 0 {
                 -Wrapping(self.negamax(-beta, -alpha, depth - 1))
             } else {
                 // To apply late move reduction, a move cannot be a capture or a promotion, the
@@ -1014,7 +992,6 @@ impl Milky {
                 }
 
                 alpha = score;
-                found_pv = true;
 
                 // Principal variation bookkeeping, the current move is the new best move, so we
                 // update the PV table at the current depth to store this move, and copy all the
@@ -1047,6 +1024,8 @@ impl Milky {
     }
 
     pub fn search_position(&mut self, depth: u8) -> Move {
+        const ASPIRATION_WINDOW: i32 = 50;
+
         self.nodes = 0;
         self.score_pv = false;
         self.follow_pv = false;
@@ -1056,9 +1035,23 @@ impl Milky {
         self.pv_table = [[Move::default(); MAX_PLY]; MAX_PLY];
         self.pv_length = [0; MAX_PLY];
 
-        for curr_depth in 1..=depth {
+        let mut alpha = Wrapping(i32::MIN + 1);
+        let mut beta = Wrapping(i32::MAX);
+
+        let mut curr_depth = 1;
+        while curr_depth <= depth {
             self.follow_pv = true;
-            self.negamax(Wrapping(i32::MIN + 1), Wrapping(i32::MAX), curr_depth);
+
+            let score = self.negamax(alpha, beta, curr_depth);
+            if score <= alpha.0 && score >= beta.0 {
+                alpha = Wrapping(i32::MIN + 1);
+                beta = Wrapping(i32::MAX);
+                continue;
+            }
+
+            alpha = Wrapping(score - ASPIRATION_WINDOW);
+            beta = Wrapping(score + ASPIRATION_WINDOW);
+            curr_depth += 1;
         }
 
         self.pv_table[0][0]
@@ -1144,7 +1137,7 @@ impl Milky {
         println!("     Enpassant:    {}", self.en_passant);
     }
 
-    pub fn print_move_list(&self) {
+    fn print_move_list(&self) {
         println!();
         println!("move     piece    capture    double    en passant    castling");
 
