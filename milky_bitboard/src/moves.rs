@@ -99,6 +99,10 @@ impl PromotedPieces {
             },
         }
     }
+
+    pub fn is_promoting(&self) -> bool {
+        *self != PromotedPieces::NoPromotion
+    }
 }
 
 /// Piece move encoding

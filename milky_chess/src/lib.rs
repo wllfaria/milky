@@ -758,10 +758,23 @@ impl Milky {
         }
     }
 
+    /// Scores a move based on the following heuristics:
+    ///
+    /// - PV move
+    /// - Captures in MVV/LVA
+    /// - 1st killer move
+    /// - 2nd killer move
+    /// - History moves
+    /// - Unsorted moves
     pub fn score_move(&mut self, piece_move: Move) -> i32 {
+        const PV_MOVE_SCORE: i32 = 20_000;
+        const MVV_LVA_BONUS: i32 = 10_000;
+        const FIRST_KILLER_MOVE: i32 = 9_000;
+        const SECOND_KILLER_MOVE: i32 = 8_000;
+
         if self.score_pv && self.pv_table[0][self.ply] == piece_move {
             self.score_pv = false;
-            return 20_000;
+            return PV_MOVE_SCORE;
         }
 
         if piece_move.is_capture() {
@@ -780,13 +793,13 @@ impl Milky {
                 .map(|(idx, _)| Pieces::from_usize_unchecked(idx))
                 .unwrap_or(Pieces::WhitePawn);
 
-            return MVV_LVA[attacker][victim] + 10_000;
+            return MVV_LVA[attacker][victim] + MVV_LVA_BONUS;
         }
 
         if self.killer_moves[0][self.ply] == piece_move {
-            9_000
+            FIRST_KILLER_MOVE
         } else if self.killer_moves[1][self.ply] == piece_move {
-            8_000
+            SECOND_KILLER_MOVE
         } else {
             self.history_moves[piece_move.piece()][piece_move.target()]
         }
@@ -835,8 +848,10 @@ impl Milky {
     }
 
     fn negamax(&mut self, mut alpha: Wrapping<i32>, beta: Wrapping<i32>, mut depth: u8) -> i32 {
+        const FULL_DEPTH_MOVES: i32 = 4;
+        const REDUCTION_LIMIT: u8 = 3;
+
         self.pv_length[self.ply] = self.ply;
-        let mut found_pv = false;
 
         if depth == 0 {
             return self.quiescence(alpha, beta);
@@ -872,10 +887,12 @@ impl Milky {
             self.enable_pv_scoring();
         }
 
-        // order moves by MVV-LVA score to improve pruning efficiency
+        // Order moves by MVV-LVA score to improve pruning efficiency
         self.sort_moves();
 
         let mut legal_moves = 0;
+        let mut found_pv = false;
+        let mut moves_searched = 0;
 
         for piece_move in self.moves.into_iter().take(self.move_count) {
             self.ply += 1;
@@ -884,8 +901,6 @@ impl Milky {
                 self.ply -= 1;
                 continue;
             }
-
-            legal_moves += 1;
 
             // If we have already found a PV move earlier in this node, we assume that this move is
             // not likely to produce a better score. So we search it with a null window. This makes
@@ -907,13 +922,50 @@ impl Milky {
                 } else {
                     shallow
                 }
-            } else {
-                // When not on a PV path, search is done normally. (eg: first move)
+            } else if moves_searched == 0 {
+                // On the first move, search is done full depth
                 -Wrapping(self.negamax(-beta, -alpha, depth - 1))
+            } else {
+                // To apply late move reduction, a move cannot be a capture or a promotion, the
+                // king must not be in check and the search must also be past the depth allowed to
+                // be reduced
+                let should_reduce = moves_searched >= FULL_DEPTH_MOVES
+                    && depth >= REDUCTION_LIMIT
+                    && !in_check
+                    && !piece_move.is_capture()
+                    && !piece_move.promotion().is_promoting();
+
+                // Apply late move reduction by reducing the depth by 2 per ply
+                let shallow = if should_reduce {
+                    -Wrapping(self.negamax(-alpha - Wrapping(1), -alpha, depth - 2))
+                } else {
+                    // This move should not yet reduce, but we are also on a non-pv path, so
+                    // instead of going down the search, we give it a fake score slightly above
+                    // alpha that ensures it will trigger the full search below.
+                    alpha + Wrapping(1)
+                };
+
+                if shallow > alpha {
+                    // LMR found a better move, so we search at full depth but with a narrower
+                    // window to double check if it is a better move.
+                    let deeper = -Wrapping(self.negamax(-alpha - Wrapping(1), -alpha, depth - 1));
+
+                    // If the narrower window also proves to improve alpha, we do a final full
+                    // depth and full width window search.
+                    if deeper > alpha && deeper < beta {
+                        -Wrapping(self.negamax(-beta, -alpha, depth - 1))
+                    } else {
+                        deeper
+                    }
+                } else {
+                    shallow
+                }
             };
 
             self.ply -= 1;
             self.undo_move();
+            legal_moves += 1;
+            moves_searched += 1;
 
             // Beta cutoff
             //
