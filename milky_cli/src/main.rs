@@ -7,7 +7,7 @@ use milky_protocols::uci::command::{
 };
 
 static FEN_A: &str = "r2q1rk1/ppp2ppp/2n1bn2/2b1p3/3pP3/3P1NPP/PPP1NPB1/R1BQ1RK1 b - - 0 9 ";
-static FEN_B: &str = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1 ";
+static KIWIPETE: &str = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1 ";
 static FEN_C: &str = "rnbqkb1r/pp1p1pPp/8/2p1pP2/1P1P4/3P3P/P1P1P3/RNBQKBNR w KQkq e6 0 1";
 
 fn print_best_move(milky: &Milky, timer: std::time::Instant, depth: u8) {
@@ -45,11 +45,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // #[cfg(not(debug_assertions))]
     #[cfg(debug_assertions)]
     {
-        milky.load_fen(milky_fen::parse_fen_string(FEN_B).unwrap());
+        milky.load_fen(milky_fen::parse_fen_string(KIWIPETE).unwrap());
         milky.print_board();
 
         let start = std::time::Instant::now();
-        let depth = 5;
+        let depth = 6;
         milky.search_position(depth);
         print_best_move(&milky, start, depth);
 
