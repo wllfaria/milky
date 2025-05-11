@@ -876,6 +876,20 @@ impl Milky {
             depth += 1;
         }
 
+        if depth >= REDUCTION_LIMIT && !in_check && self.ply != 0 {
+            self.snapshot_board();
+
+            self.side_to_move = self.side_to_move.enemy();
+            self.en_passant = Square::OffBoard;
+
+            let score = -Wrapping(self.negamax(-beta, -beta + Wrapping(1), depth - 1 - 2));
+            self.undo_move();
+
+            if score >= beta {
+                return beta.0;
+            }
+        }
+
         self.generate_moves();
 
         // If move is within the PV path from the previous iteration, give it a small bonus to
