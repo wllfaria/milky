@@ -1,5 +1,24 @@
-use crate::Rank;
 use crate::error::{Error, Result};
+use crate::{File, IntoU64, Rank};
+
+#[derive(Debug)]
+pub struct SquareIter {
+    iter: [Square; 64],
+    index: usize,
+}
+
+impl Iterator for SquareIter {
+    type Item = Square;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index > 63 {
+            None
+        } else {
+            self.index += 1;
+            Some(self.iter[self.index - 1])
+        }
+    }
+}
 
 #[rustfmt::skip]
 #[repr(u64)]
@@ -53,6 +72,80 @@ impl Square {
             Rank::Seventh => *self >= Self::A7 && *self <= Self::H7,
             Rank::Eighth =>  *self >= Self::A8 && *self <= Self::H8,
         }
+    }
+
+    pub fn file(&self) -> File {
+        match self {
+            Square::A8
+            | Square::A7
+            | Square::A6
+            | Square::A5
+            | Square::A4
+            | Square::A3
+            | Square::A2
+            | Square::A1 => File::A,
+            Square::B8
+            | Square::B7
+            | Square::B6
+            | Square::B5
+            | Square::B4
+            | Square::B3
+            | Square::B2
+            | Square::B1 => File::B,
+            Square::C8
+            | Square::C7
+            | Square::C6
+            | Square::C5
+            | Square::C4
+            | Square::C3
+            | Square::C2
+            | Square::C1 => File::C,
+            Square::D8
+            | Square::D7
+            | Square::D6
+            | Square::D5
+            | Square::D4
+            | Square::D3
+            | Square::D2
+            | Square::D1 => File::D,
+            Square::E8
+            | Square::E7
+            | Square::E6
+            | Square::E5
+            | Square::E4
+            | Square::E3
+            | Square::E2
+            | Square::E1 => File::E,
+            Square::F8
+            | Square::F7
+            | Square::F6
+            | Square::F5
+            | Square::F4
+            | Square::F3
+            | Square::F2
+            | Square::F1 => File::F,
+            Square::G8
+            | Square::G7
+            | Square::G6
+            | Square::G5
+            | Square::G4
+            | Square::G3
+            | Square::G2
+            | Square::G1 => File::G,
+            Square::H8
+            | Square::H7
+            | Square::H6
+            | Square::H5
+            | Square::H4
+            | Square::H3
+            | Square::H2
+            | Square::H1 => File::H,
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn is_available(&self) -> bool {
+        *self != Square::OffBoard
     }
 
     pub fn from_algebraic_str(str: &str) -> Result<Square> {
@@ -124,6 +217,78 @@ impl Square {
             _ => Err(Error::InvalidSquare(format!("Invalid square: {str}"))),
         }
     }
+
+    pub fn iter() -> SquareIter {
+        SquareIter {
+            index: 0,
+            iter: [
+                Square::A8,
+                Square::B8,
+                Square::C8,
+                Square::D8,
+                Square::E8,
+                Square::F8,
+                Square::G8,
+                Square::H8,
+                Square::A7,
+                Square::B7,
+                Square::C7,
+                Square::D7,
+                Square::E7,
+                Square::F7,
+                Square::G7,
+                Square::H7,
+                Square::A6,
+                Square::B6,
+                Square::C6,
+                Square::D6,
+                Square::E6,
+                Square::F6,
+                Square::G6,
+                Square::H6,
+                Square::A5,
+                Square::B5,
+                Square::C5,
+                Square::D5,
+                Square::E5,
+                Square::F5,
+                Square::G5,
+                Square::H5,
+                Square::A4,
+                Square::B4,
+                Square::C4,
+                Square::D4,
+                Square::E4,
+                Square::F4,
+                Square::G4,
+                Square::H4,
+                Square::A3,
+                Square::B3,
+                Square::C3,
+                Square::D3,
+                Square::E3,
+                Square::F3,
+                Square::G3,
+                Square::H3,
+                Square::A2,
+                Square::B2,
+                Square::C2,
+                Square::D2,
+                Square::E2,
+                Square::F2,
+                Square::G2,
+                Square::H2,
+                Square::A1,
+                Square::B1,
+                Square::C1,
+                Square::D1,
+                Square::E1,
+                Square::F1,
+                Square::G1,
+                Square::H1,
+            ],
+        }
+    }
 }
 
 #[rustfmt::skip]
@@ -166,6 +331,26 @@ impl std::ops::Index<Square> for [i32; 64] {
 }
 
 impl std::ops::IndexMut<Square> for [i32; 64] {
+    fn index_mut(&mut self, index: Square) -> &mut Self::Output {
+        &mut self[index as usize]
+    }
+}
+
+impl<T> std::ops::Index<Square> for [T; 64]
+where
+    T: IntoU64,
+{
+    type Output = T;
+
+    fn index(&self, index: Square) -> &Self::Output {
+        &self[index as usize]
+    }
+}
+
+impl<T> std::ops::IndexMut<Square> for [T; 64]
+where
+    T: IntoU64,
+{
     fn index_mut(&mut self, index: Square) -> &mut Self::Output {
         &mut self[index as usize]
     }

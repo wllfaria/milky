@@ -1,15 +1,24 @@
+mod evaluate;
 mod random;
+pub mod transposition_table;
+pub mod zobrist;
 
 use std::num::Wrapping;
 use std::sync::OnceLock;
 
+use evaluate::evaluate_position;
 use milky_bitboard::{
     BitBoard, CastlingRights, Move, MoveFlags, Pieces, PromotedPieces, Rank, Side, Square,
 };
 use milky_fen::FenParts;
 use random::Random;
+use transposition_table::{TTFlag, TranspositionTable};
+use zobrist::{GamePosition, Zobrist, ZobristKey};
 
-static MAX_PLY: usize = 64;
+pub static MAX_PLY: usize = 64;
+pub static INFINITY: i32 = 50000;
+pub static MATE_UPPER_BOUND: i32 = 49000;
+pub static MATE_LOWER_BOUND: i32 = 48000;
 
 static PAWN_ATTACKS: OnceLock<[[BitBoard; 64]; 2]> = OnceLock::new();
 static KNIGHT_ATTACKS: OnceLock<[BitBoard; 64]> = OnceLock::new();
@@ -66,17 +75,17 @@ static CASTLING_RIGHTS: [u8; 64] = [
 ];
 
 #[rustfmt::skip]
-static PIECE_SCORE: [i32; 12] = [
+pub static PIECE_SCORE: [i32; 12] = [
     100,  // white pawn score
-    500,  // white rook score
     300,  // white knight scrore
     350,  // white bishop score
+    500,  // white rook score
    1000,  // white queen score
   10000,  // white king score
    -100,  // black pawn score
-   -500,  // black rook score
    -300,  // black knight scrore
    -350,  // black bishop score
+   -500,  // black rook score
   -1000,  // black queen score
  -10000,  // black king score
 ];
@@ -123,7 +132,7 @@ static MVV_LVA: [[i32; 12]; 12] = [
 ];
 
 #[rustfmt::skip]
-static PAWN_POS_SCORE: [i32; 64] = [
+pub static PAWN_POS_SCORE: [i32; 64] = [
     90,  90,  90,  90,  90,  90,  90,  90,
     30,  30,  30,  40,  40,  30,  30,  30,
     20,  20,  20,  30,  30,  30,  20,  20,
@@ -135,7 +144,7 @@ static PAWN_POS_SCORE: [i32; 64] = [
 ];
 
 #[rustfmt::skip]
-static KNIGHT_POS_SCORE: [i32; 64] = [
+pub static KNIGHT_POS_SCORE: [i32; 64] = [
     -5,   0,   0,   0,   0,   0,   0,  -5,
     -5,   0,   0,  10,  10,   0,   0,  -5,
     -5,   5,  20,  20,  20,  20,   5,  -5,
@@ -147,7 +156,7 @@ static KNIGHT_POS_SCORE: [i32; 64] = [
 ];
 
 #[rustfmt::skip]
-static BISHOP_POS_SCORE: [i32; 64] = [
+pub static BISHOP_POS_SCORE: [i32; 64] = [
      0,   0,   0,   0,   0,   0,   0,   0,
      0,   0,   0,   0,   0,   0,   0,   0,
      0,   0,   0,  10,  10,   0,   0,   0,
@@ -159,7 +168,7 @@ static BISHOP_POS_SCORE: [i32; 64] = [
 ];
 
 #[rustfmt::skip]
-static ROOK_POS_SCORE: [i32; 64] = [
+pub static ROOK_POS_SCORE: [i32; 64] = [
     50,  50,  50,  50,  50,  50,  50,  50,
     50,  50,  50,  50,  50,  50,  50,  50,
      0,   0,  10,  20,  20,  10,   0,   0,
@@ -171,7 +180,7 @@ static ROOK_POS_SCORE: [i32; 64] = [
 ];
 
 #[rustfmt::skip]
-static KING_POS_SCORE: [i32; 64] = [
+pub static KING_POS_SCORE: [i32; 64] = [
      0,   0,   0,   0,   0,   0,   0,   0,
      0,   0,   5,   5,   5,   5,   0,   0,
      0,   5,   5,  10,  10,   5,   5,   0,
@@ -652,6 +661,7 @@ pub struct BoardSnapshot {
     pub side_to_move: Side,
     pub en_passant: Square,
     pub castling_rights: CastlingRights,
+    pub position_key: ZobristKey,
 }
 
 impl Default for BoardSnapshot {
@@ -662,6 +672,7 @@ impl Default for BoardSnapshot {
             side_to_move: Side::White,
             en_passant: Square::OffBoard,
             castling_rights: CastlingRights::all(),
+            position_key: ZobristKey::default(),
         }
     }
 }
@@ -688,6 +699,9 @@ pub struct Milky {
 
     pub score_pv: bool,
     pub follow_pv: bool,
+
+    pub zobrist: Zobrist,
+    pub transposition_table: TranspositionTable,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
@@ -723,6 +737,8 @@ impl Milky {
             pv_length: [0; MAX_PLY],
             score_pv: false,
             follow_pv: false,
+            zobrist: Zobrist::new(),
+            transposition_table: TranspositionTable::new(),
         }
     }
 
@@ -739,7 +755,7 @@ impl Milky {
             .map(|m| (self.score_move(m), m))
             .collect();
 
-        scored_moves.sort_by(|a, b| b.0.cmp(&a.0));
+        scored_moves.sort_by_key(|&(score, _)| std::cmp::Reverse(score));
 
         scored_moves
             .into_iter()
@@ -781,16 +797,19 @@ impl Milky {
             let attacker = piece_move.piece();
             let victim_square = piece_move.target();
 
+            let (start_piece, end_piece) = if self.side_to_move == Side::White {
+                (Pieces::BlackPawn, Pieces::BlackKing)
+            } else {
+                (Pieces::WhitePawn, Pieces::WhiteKing)
+            };
+
             // Victim is initialized as white pawn to make en-passant moves easier.
             //
             // Since side doesn't matter for en-passant, even when white is the attacker, white
             // pawn takes white pawn have the same score as white capturing black.
-            let victim = self
-                .boards
-                .into_iter()
-                .enumerate()
-                .find(|(_, board)| board.get_bit(victim_square).is_set())
-                .map(|(idx, _)| Pieces::from_usize_unchecked(idx))
+            let victim = (start_piece as usize..=end_piece as usize)
+                .find(|&idx| self.boards[idx].get_bit(victim_square).is_set())
+                .map(Pieces::from_usize_unchecked)
                 .unwrap_or(Pieces::WhitePawn);
 
             return MVV_LVA[attacker][victim] + MVV_LVA_BONUS;
@@ -808,7 +827,11 @@ impl Milky {
     fn quiescence(&mut self, mut alpha: Wrapping<i32>, beta: Wrapping<i32>) -> i32 {
         self.nodes += 1;
 
-        let evaluation = self.evaluate_position();
+        if self.ply > MAX_PLY - 1 {
+            return evaluate_position(self.side_to_move, self.boards);
+        }
+
+        let evaluation = evaluate_position(self.side_to_move, self.boards);
 
         if evaluation >= beta.0 {
             return beta.0;
@@ -835,12 +858,12 @@ impl Milky {
 
             self.undo_move();
 
-            if score >= beta {
-                return beta.0;
-            }
-
             if score > alpha {
                 alpha = score;
+
+                if score >= beta {
+                    return beta.0;
+                }
             }
         }
 
@@ -851,6 +874,18 @@ impl Milky {
         const FULL_DEPTH_MOVES: i32 = 4;
         const REDUCTION_LIMIT: u8 = 3;
 
+        let mut tt_flag = TTFlag::Alpha;
+
+        let pv_node = beta.0 - alpha.0 > 1;
+
+        let score =
+            self.transposition_table
+                .get(self.zobrist.position, alpha.0, beta.0, depth, self.ply);
+
+        if let (Some(score), true, true) = (score, self.ply != 0, !pv_node) {
+            return score;
+        }
+
         self.pv_length[self.ply] = self.ply;
 
         if depth == 0 {
@@ -858,7 +893,7 @@ impl Milky {
         }
 
         if self.ply > MAX_PLY - 1 {
-            return self.evaluate_position();
+            return evaluate_position(self.side_to_move, self.boards);
         }
 
         self.nodes += 1;
@@ -879,10 +914,19 @@ impl Milky {
         if depth >= REDUCTION_LIMIT && !in_check && self.ply != 0 {
             self.snapshot_board();
 
-            self.side_to_move = self.side_to_move.enemy();
+            self.ply += 1;
+
+            if self.en_passant.is_available() {
+                self.zobrist.position ^= self.zobrist.en_passant[self.en_passant];
+            }
+
             self.en_passant = Square::OffBoard;
+            self.side_to_move = self.side_to_move.enemy();
+
+            self.zobrist.position ^= self.zobrist.side_key;
 
             let score = -Wrapping(self.negamax(-beta, -beta + Wrapping(1), depth - 1 - 2));
+            self.ply -= 1;
             self.undo_move();
 
             if score >= beta {
@@ -914,6 +958,8 @@ impl Milky {
                 self.ply -= 1;
                 continue;
             }
+
+            legal_moves += 1;
 
             let score = if moves_searched == 0 {
                 -Wrapping(self.negamax(-beta, -alpha, depth - 1))
@@ -956,26 +1002,7 @@ impl Milky {
 
             self.ply -= 1;
             self.undo_move();
-            legal_moves += 1;
             moves_searched += 1;
-
-            // Beta cutoff
-            //
-            // If the current move is so good it exceeds beta, there is no need to search its
-            // siblings, as this move is so good the opponent would never allow it to happen.
-            //
-            // This is a fail-hard alpha/beta search
-            if score >= beta {
-                if !piece_move.is_capture() {
-                    // When a non-capture (killer move) causes a beta cutoff, we store keep track of
-                    // them in order to give them a higher priority in searching when there's a
-                    // similar position.
-                    self.killer_moves[1][self.ply] = self.killer_moves[0][self.ply];
-                    self.killer_moves[0][self.ply] = piece_move;
-                }
-
-                return beta.0;
-            }
 
             // Alpha raise
             //
@@ -983,6 +1010,9 @@ impl Milky {
             // improvement on our previously found primary variance and we want to update our
             // primary variance table
             if score > alpha {
+                // since we found an exact score, update the flag used at the end
+                tt_flag = TTFlag::Exact;
+
                 // History heuristic
                 //
                 // Keep track of quiet moves that increases alpha by giving them a bonus based on
@@ -997,29 +1027,51 @@ impl Milky {
                 // update the PV table at the current depth to store this move, and copy all the
                 // other PV nodes from the deeper ply
                 self.pv_table[self.ply][self.ply] = piece_move;
-
-                for i in 0..self.pv_length[self.ply + 1] {
-                    self.pv_table[self.ply][self.ply + 1 + i] =
-                        self.pv_table[self.ply + 1][self.ply + 1 + i];
+                for next_ply in self.ply + 1..self.pv_length[self.ply + 1] {
+                    self.pv_table[self.ply][next_ply] = self.pv_table[self.ply + 1][next_ply];
                 }
 
                 self.pv_length[self.ply] = self.pv_length[self.ply + 1];
+
+                // Beta cutoff
+                //
+                // If the current move is so good it exceeds beta, there is no need to search its
+                // siblings, as this move is so good the opponent would never allow it to happen.
+                //
+                // This is a fail-hard alpha/beta search
+                if score >= beta {
+                    self.transposition_table.set(
+                        self.zobrist.position,
+                        depth,
+                        beta.0,
+                        TTFlag::Beta,
+                        self.ply,
+                    );
+
+                    if !piece_move.is_capture() {
+                        // When a non-capture (killer move) causes a beta cutoff, we store keep track of
+                        // them in order to give them a higher priority in searching when there's a
+                        // similar position.
+                        self.killer_moves[1][self.ply] = self.killer_moves[0][self.ply];
+                        self.killer_moves[0][self.ply] = piece_move;
+                    }
+
+                    return beta.0;
+                }
             }
         }
 
-        // If there are no legal moves on a given position, if the king is currently in check, its
-        // a checkmate. But if the king is not in check, its a stalemate
         if legal_moves == 0 {
             if in_check {
-                // Apply a depth-based bonus to the checkmate score to increase earliest mates
-                // positions, the earlier the best for mates
-                return (i32::MIN + 1000) + self.ply as i32;
+                return -MATE_UPPER_BOUND + self.ply as i32;
             } else {
                 return 0;
             }
         }
 
-        // Score is less than alpha, which means the move is bad and should be ignored
+        self.transposition_table
+            .set(self.zobrist.position, depth, alpha.0, tt_flag, self.ply);
+
         alpha.0
     }
 
@@ -1027,67 +1079,59 @@ impl Milky {
         const ASPIRATION_WINDOW: i32 = 50;
 
         self.nodes = 0;
-        self.score_pv = false;
         self.follow_pv = false;
+        self.score_pv = false;
 
         self.killer_moves = [[Move::default(); 64]; 2];
         self.history_moves = [[0; 64]; 12];
         self.pv_table = [[Move::default(); MAX_PLY]; MAX_PLY];
         self.pv_length = [0; MAX_PLY];
 
-        let mut alpha = Wrapping(i32::MIN + 1);
-        let mut beta = Wrapping(i32::MAX);
+        let mut alpha = Wrapping(-INFINITY);
+        let mut beta = Wrapping(INFINITY);
 
-        let mut curr_depth = 1;
-        while curr_depth <= depth {
+        for curr_depth in 1..=depth {
             self.follow_pv = true;
 
             let score = self.negamax(alpha, beta, curr_depth);
-            if score <= alpha.0 && score >= beta.0 {
-                alpha = Wrapping(i32::MIN + 1);
-                beta = Wrapping(i32::MAX);
+            if score <= alpha.0 || score >= beta.0 {
+                alpha = Wrapping(-INFINITY);
+                beta = Wrapping(INFINITY);
                 continue;
             }
 
             alpha = Wrapping(score - ASPIRATION_WINDOW);
             beta = Wrapping(score + ASPIRATION_WINDOW);
-            curr_depth += 1;
+
+            if score > -MATE_UPPER_BOUND && score < -MATE_LOWER_BOUND {
+                print!(
+                    "info score mate {} depth {curr_depth} nodes {} pv ",
+                    -(score + MATE_UPPER_BOUND) / 2 - 1,
+                    self.nodes,
+                )
+            } else if score > MATE_LOWER_BOUND && score < MATE_UPPER_BOUND {
+                print!(
+                    "info score mate {} depth {curr_depth} nodes {} pv ",
+                    (MATE_UPPER_BOUND - score) / 2 + 1,
+                    self.nodes,
+                )
+            } else {
+                print!(
+                    "info score cp {score} depth {curr_depth} nodes {} pv ",
+                    self.nodes
+                );
+            }
+
+            for idx in 0..self.pv_length[0] {
+                print!("{} ", self.pv_table[0][idx]);
+            }
+
+            println!();
         }
+
+        println!("bestmove {}", self.pv_table[0][0]);
 
         self.pv_table[0][0]
-    }
-
-    pub fn evaluate_position(&self) -> i32 {
-        let mut score = 0;
-
-        for (idx, board) in self.boards.into_iter().enumerate() {
-            let piece = Pieces::from_usize_unchecked(idx);
-
-            for square in board {
-                score += PIECE_SCORE[idx];
-
-                match piece {
-                    Pieces::WhitePawn => score += PAWN_POS_SCORE[square as usize],
-                    Pieces::WhiteRook => score += ROOK_POS_SCORE[square as usize],
-                    Pieces::WhiteKnight => score += KNIGHT_POS_SCORE[square as usize],
-                    Pieces::WhiteBishop => score += BISHOP_POS_SCORE[square as usize],
-                    Pieces::WhiteKing => score += KING_POS_SCORE[square as usize],
-
-                    Pieces::BlackPawn => score -= PAWN_POS_SCORE[square.mirror() as usize],
-                    Pieces::BlackRook => score -= ROOK_POS_SCORE[square.mirror() as usize],
-                    Pieces::BlackKnight => score -= KNIGHT_POS_SCORE[square.mirror() as usize],
-                    Pieces::BlackBishop => score -= BISHOP_POS_SCORE[square.mirror() as usize],
-                    Pieces::BlackKing => score -= KING_POS_SCORE[square.mirror() as usize],
-                    _ => {}
-                }
-            }
-        }
-
-        match self.side_to_move {
-            Side::White => score,
-            Side::Black => -score,
-            _ => unreachable!(),
-        }
     }
 
     pub fn load_fen(&mut self, fen_parts: FenParts) {
@@ -1102,6 +1146,12 @@ impl Milky {
         self.en_passant = fen_parts.en_passant;
         self.side_to_move = fen_parts.side_to_move;
         self.castling_rights = fen_parts.castling_rights;
+        self.zobrist.position = self.zobrist.hash_position(GamePosition {
+            boards: self.boards,
+            side_to_move: self.side_to_move,
+            en_passant: self.en_passant,
+            castling_rights: self.castling_rights,
+        })
     }
 
     pub fn print_board(&self) {
@@ -1135,6 +1185,8 @@ impl Milky {
         println!("     Side:      {}", self.side_to_move);
         println!("     Castling:   {}", self.castling_rights);
         println!("     Enpassant:    {}", self.en_passant);
+        println!("     Zobrist key: {}", self.zobrist.position);
+        println!();
     }
 
     fn print_move_list(&self) {
@@ -1627,6 +1679,7 @@ impl Milky {
             side_to_move: self.side_to_move,
             en_passant: self.en_passant,
             castling_rights: self.castling_rights,
+            position_key: self.zobrist.position,
         });
     }
 
@@ -1637,6 +1690,7 @@ impl Milky {
             self.side_to_move = snapshot.side_to_move;
             self.en_passant = snapshot.en_passant;
             self.castling_rights = snapshot.castling_rights;
+            self.zobrist.position = snapshot.position_key;
         } else {
             panic!("Tried to undo_move with no snapshots on stack!");
         }
@@ -1661,6 +1715,9 @@ impl Milky {
                 self.boards[piece].clear_bit(source);
                 self.boards[piece].set_bit(target);
 
+                self.zobrist.position ^= self.zobrist.pieces_table[piece][source];
+                self.zobrist.position ^= self.zobrist.pieces_table[piece][target];
+
                 if piece_move.is_capture() {
                     let (start, end) = match self.side_to_move {
                         Side::White => (Pieces::BlackPawn as usize, Pieces::BlackKing as usize),
@@ -1672,28 +1729,28 @@ impl Milky {
                         // if there is a piece on target square, remove that piece and break out
                         if self.boards[piece].get_bit(target).is_set() {
                             self.boards[piece].clear_bit(target);
+                            self.zobrist.position ^= self.zobrist.pieces_table[piece][target];
                             break;
                         }
                     }
                 }
 
-                match piece_move.promotion() {
-                    // no promotion happened, nothing to do
-                    PromotedPieces::NoPromotion => {}
-
+                if piece_move.promotion().is_promoting() {
                     // remove pawn from its original bitboard and move add the promoted piece to its
                     // corresponding promoted piece
-                    promotion => {
-                        let pawn_side = match self.side_to_move {
-                            Side::White => Pieces::WhitePawn,
-                            Side::Black => Pieces::BlackPawn,
-                            _ => unreachable!(),
-                        };
+                    let pawn_side = match self.side_to_move {
+                        Side::White => Pieces::WhitePawn,
+                        Side::Black => Pieces::BlackPawn,
+                        _ => unreachable!(),
+                    };
 
-                        debug_assert!(self.boards[pawn_side].get_bit(target).is_set());
-                        self.boards[pawn_side].clear_bit(target);
-                        self.boards[promotion.into_piece(self.side_to_move)].set_bit(target);
-                    }
+                    let promotion = piece_move.promotion();
+                    let promoted_piece = promotion.into_piece(self.side_to_move);
+
+                    self.boards[pawn_side].clear_bit(target);
+                    self.boards[promoted_piece].set_bit(target);
+                    self.zobrist.position ^= self.zobrist.pieces_table[pawn_side][target];
+                    self.zobrist.position ^= self.zobrist.pieces_table[promoted_piece][target];
                 }
 
                 if piece_move.is_en_passant() {
@@ -1709,14 +1766,13 @@ impl Milky {
                         _ => unreachable!(),
                     };
 
-                    debug_assert!(
-                        self.boards[pawn_side].get_bit(square).is_set(),
-                        "Tried to en passant capture at an empty square"
-                    );
-
                     self.boards[pawn_side].clear_bit(square);
+                    self.zobrist.position ^= self.zobrist.pieces_table[pawn_side][square];
                 }
 
+                if self.en_passant.is_available() {
+                    self.zobrist.position ^= self.zobrist.en_passant[self.en_passant];
+                }
                 self.en_passant = Square::OffBoard;
 
                 if piece_move.is_double_push() {
@@ -1725,36 +1781,33 @@ impl Milky {
                         Side::Black => target.one_forward().unwrap(),
                         _ => unreachable!(),
                     };
+                    self.zobrist.position ^= self.zobrist.en_passant[self.en_passant];
                 }
 
                 if piece_move.is_castling() {
-                    match target {
+                    let (piece, source, target) = match target {
                         // White castles king side
-                        Square::G1 => {
-                            self.boards[Pieces::WhiteRook].clear_bit(Square::H1);
-                            self.boards[Pieces::WhiteRook].set_bit(Square::F1);
-                        }
+                        Square::G1 => (Pieces::WhiteRook, Square::H1, Square::F1),
                         // White castles queen side
-                        Square::C1 => {
-                            self.boards[Pieces::WhiteRook].clear_bit(Square::A1);
-                            self.boards[Pieces::WhiteRook].set_bit(Square::D1);
-                        }
+                        Square::C1 => (Pieces::WhiteRook, Square::A1, Square::D1),
                         // Black castles king side
-                        Square::G8 => {
-                            self.boards[Pieces::BlackRook].clear_bit(Square::H8);
-                            self.boards[Pieces::BlackRook].set_bit(Square::F8);
-                        }
+                        Square::G8 => (Pieces::BlackRook, Square::H8, Square::F8),
                         // Black castles queen side
-                        Square::C8 => {
-                            self.boards[Pieces::BlackRook].clear_bit(Square::A8);
-                            self.boards[Pieces::BlackRook].set_bit(Square::D8);
-                        }
+                        Square::C8 => (Pieces::BlackRook, Square::A8, Square::D8),
                         _ => unreachable!(),
-                    }
+                    };
+
+                    self.boards[piece].clear_bit(source);
+                    self.boards[piece].set_bit(target);
+                    self.zobrist.position ^= self.zobrist.pieces_table[piece][source];
+                    self.zobrist.position ^= self.zobrist.pieces_table[piece][target];
                 }
 
                 let source_rights = CASTLING_RIGHTS[source as usize];
                 let target_rights = CASTLING_RIGHTS[target as usize];
+
+                self.zobrist.position ^=
+                    self.zobrist.castling_rights[self.castling_rights.bits() as usize];
 
                 self.castling_rights = self
                     .castling_rights
@@ -1763,6 +1816,9 @@ impl Milky {
                 self.castling_rights = self
                     .castling_rights
                     .intersection(CastlingRights::from_bits_retain(target_rights));
+
+                self.zobrist.position ^=
+                    self.zobrist.castling_rights[self.castling_rights.bits() as usize];
 
                 self.occupancies[Side::White] = BitBoard::default();
                 self.occupancies[Side::Black] = BitBoard::default();
@@ -1782,7 +1838,7 @@ impl Milky {
                 self.occupancies[Side::Both] |= black;
 
                 self.side_to_move = self.side_to_move.enemy();
-
+                self.zobrist.position ^= self.zobrist.side_key;
                 let king = match self.side_to_move {
                     Side::White => Pieces::BlackKing,
                     Side::Black => Pieces::WhiteKing,

@@ -219,3 +219,11 @@ impl std::fmt::Display for Move {
         )
     }
 }
+
+impl std::ops::Deref for Move {
+    type Target = u32;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}

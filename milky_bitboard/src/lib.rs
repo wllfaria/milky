@@ -8,6 +8,16 @@ pub use error::Error;
 pub use moves::{Move, MoveFlags, PromotedPieces};
 pub use square::Square;
 
+pub trait IntoU64 {
+    fn into(self) -> u64;
+}
+
+impl IntoU64 for u64 {
+    fn into(self) -> u64 {
+        self
+    }
+}
+
 bitflags::bitflags! {
     /// ┌──────┬─────┬─────────────────────────────┐
     /// │ bin  │ dec │ description                 │
@@ -46,18 +56,37 @@ impl std::fmt::Display for CastlingRights {
     }
 }
 
+#[derive(Debug)]
+pub struct PiecesIter {
+    iter: [Pieces; 12],
+    index: usize,
+}
+
+impl Iterator for PiecesIter {
+    type Item = Pieces;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index > 11 {
+            None
+        } else {
+            self.index += 1;
+            Some(self.iter[self.index - 1])
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Pieces {
     WhitePawn,
-    WhiteRook,
     WhiteKnight,
     WhiteBishop,
+    WhiteRook,
     WhiteQueen,
     WhiteKing,
     BlackPawn,
-    BlackRook,
     BlackKnight,
     BlackBishop,
+    BlackRook,
     BlackQueen,
     BlackKing,
 }
@@ -78,15 +107,15 @@ impl Pieces {
     pub fn side(&self) -> Side {
         match self {
             Pieces::WhitePawn
-            | Pieces::WhiteRook
             | Pieces::WhiteKnight
             | Pieces::WhiteBishop
+            | Pieces::WhiteRook
             | Pieces::WhiteQueen
             | Pieces::WhiteKing => Side::White,
             Pieces::BlackPawn
-            | Pieces::BlackRook
             | Pieces::BlackKnight
             | Pieces::BlackBishop
+            | Pieces::BlackRook
             | Pieces::BlackQueen
             | Pieces::BlackKing => Side::Black,
         }
@@ -95,15 +124,15 @@ impl Pieces {
     pub fn from_usize_unchecked(value: usize) -> Self {
         match value {
             0 => Pieces::WhitePawn,
-            1 => Pieces::WhiteRook,
-            2 => Pieces::WhiteKnight,
-            3 => Pieces::WhiteBishop,
+            1 => Pieces::WhiteKnight,
+            2 => Pieces::WhiteBishop,
+            3 => Pieces::WhiteRook,
             4 => Pieces::WhiteQueen,
             5 => Pieces::WhiteKing,
             6 => Pieces::BlackPawn,
-            7 => Pieces::BlackRook,
-            8 => Pieces::BlackKnight,
-            9 => Pieces::BlackBishop,
+            7 => Pieces::BlackKnight,
+            8 => Pieces::BlackBishop,
+            9 => Pieces::BlackRook,
             10 => Pieces::BlackQueen,
             11 => Pieces::BlackKing,
             _ => unreachable!(),
@@ -111,20 +140,26 @@ impl Pieces {
     }
 
     pub fn from_u8_unchecked(value: u8) -> Self {
-        match value {
-            0 => Pieces::WhitePawn,
-            1 => Pieces::WhiteRook,
-            2 => Pieces::WhiteKnight,
-            3 => Pieces::WhiteBishop,
-            4 => Pieces::WhiteQueen,
-            5 => Pieces::WhiteKing,
-            6 => Pieces::BlackPawn,
-            7 => Pieces::BlackRook,
-            8 => Pieces::BlackKnight,
-            9 => Pieces::BlackBishop,
-            10 => Pieces::BlackQueen,
-            11 => Pieces::BlackKing,
-            _ => unreachable!(),
+        Pieces::from_usize_unchecked(value as usize)
+    }
+
+    pub fn iter() -> PiecesIter {
+        PiecesIter {
+            iter: [
+                Pieces::WhitePawn,
+                Pieces::WhiteKnight,
+                Pieces::WhiteBishop,
+                Pieces::WhiteRook,
+                Pieces::WhiteQueen,
+                Pieces::WhiteKing,
+                Pieces::BlackPawn,
+                Pieces::BlackKnight,
+                Pieces::BlackBishop,
+                Pieces::BlackRook,
+                Pieces::BlackQueen,
+                Pieces::BlackKing,
+            ],
+            index: 0,
         }
     }
 }
@@ -175,6 +210,26 @@ impl std::ops::Index<Pieces> for [i32; 12] {
 
     fn index(&self, index: Pieces) -> &Self::Output {
         &self[index as usize]
+    }
+}
+
+impl<T> std::ops::Index<Pieces> for [[T; 64]; 12]
+where
+    T: IntoU64,
+{
+    type Output = [T; 64];
+
+    fn index(&self, index: Pieces) -> &Self::Output {
+        &self[index as usize]
+    }
+}
+
+impl<T> std::ops::IndexMut<Pieces> for [[T; 64]; 12]
+where
+    T: IntoU64,
+{
+    fn index_mut(&mut self, index: Pieces) -> &mut Self::Output {
+        &mut self[index as usize]
     }
 }
 
@@ -230,6 +285,19 @@ pub enum Rank {
     Sixth,
     Seventh,
     Eighth,
+}
+
+#[repr(u64)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+pub enum File {
+    A,
+    B,
+    C,
+    D,
+    E,
+    F,
+    G,
+    H,
 }
 
 #[repr(transparent)]

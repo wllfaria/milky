@@ -1,7 +1,5 @@
 #[derive(Debug)]
-pub struct Random {
-    state: u32,
-}
+pub struct Random(u32);
 
 impl Default for Random {
     fn default() -> Self {
@@ -11,17 +9,17 @@ impl Default for Random {
 
 impl Random {
     pub fn new() -> Self {
-        Self { state: 1804289383 }
+        Self(1804289383)
     }
 
     pub fn gen_u32(&mut self) -> u32 {
-        let mut number = self.state;
+        let mut number = self.0;
 
         number ^= number << 13;
         number ^= number >> 17;
         number ^= number << 5;
 
-        self.state = number;
+        self.0 = number;
         number
     }
 

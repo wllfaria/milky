@@ -1,5 +1,6 @@
 use std::io::BufRead;
 
+use milky_chess::transposition_table::TTFlag;
 use milky_chess::{Milky, MoveKind};
 use milky_protocols::Protocol;
 use milky_protocols::uci::command::{
@@ -9,6 +10,55 @@ use milky_protocols::uci::command::{
 static FEN_A: &str = "r2q1rk1/ppp2ppp/2n1bn2/2b1p3/3pP3/3P1NPP/PPP1NPB1/R1BQ1RK1 b - - 0 9 ";
 static KIWIPETE: &str = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1 ";
 static FEN_C: &str = "rnbqkb1r/pp1p1pPp/8/2p1pP2/1P1P4/3P3P/P1P1P3/RNBQKBNR w KQkq e6 0 1";
+
+fn perft_driver(milky: &mut Milky, depth: u8) -> usize {
+    let mut nodes = 0;
+
+    if depth == 0 {
+        return nodes + 1;
+    }
+
+    milky.generate_moves();
+
+    for piece_move in milky.moves.into_iter().take(milky.move_count) {
+        if !milky.make_move(piece_move, MoveKind::AllMoves) {
+            continue;
+        }
+
+        nodes += perft_driver(milky, depth - 1);
+
+        milky.undo_move();
+    }
+
+    nodes
+}
+
+fn perft_test(milky: &mut Milky, depth: u8) {
+    milky.generate_moves();
+    let start = std::time::Instant::now();
+
+    let mut nodes = 0;
+
+    for piece_move in milky.moves.into_iter().take(milky.move_count) {
+        if !milky.make_move(piece_move, MoveKind::AllMoves) {
+            continue;
+        }
+
+        let cummulative_nodes = nodes;
+        nodes += perft_driver(milky, depth - 1);
+
+        let old_nodes = nodes - cummulative_nodes;
+
+        milky.undo_move();
+
+        println!("move {piece_move} nodes: {old_nodes}");
+    }
+
+    println!();
+    println!("Depth: {depth}");
+    println!("Nodes: {nodes}");
+    println!("Time: {:?}", start.elapsed());
+}
 
 fn print_best_move(milky: &Milky, timer: std::time::Instant, depth: u8) {
     println!(
@@ -38,23 +88,42 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut milky = Milky::new();
     let mut uci = milky_protocols::uci::Uci;
 
-    let stdin = std::io::stdin();
-    let mut handle = stdin.lock();
-    let mut line = String::new();
-
     // #[cfg(not(debug_assertions))]
     #[cfg(debug_assertions)]
     {
-        milky.load_fen(milky_fen::parse_fen_string(KIWIPETE).unwrap());
+        // milky.load_fen(milky_fen::parse_fen_string(START_POSITION).unwrap());
+        milky.load_fen(milky_fen::parse_fen_string("4k3/Q7/8/4K3/8/8/8/8 w - - 0 1").unwrap());
         milky.print_board();
 
-        let start = std::time::Instant::now();
-        let depth = 7;
-        milky.search_position(depth);
-        print_best_move(&milky, start, depth);
+        // milky.transposition_table.clear();
+        //
+        // milky.transposition_table.set(
+        //     milky.zobrist.position,
+        //     1,
+        //     19,
+        //     TTFlag::Alpha,
+        //     milky.pv_table[0][0],
+        // );
+        //
+        // let score = milky
+        //     .transposition_table
+        //     .get(milky.zobrist.position, 20, 30, 1);
+
+        // println!("{score:?}");
+
+        // let start = std::time::Instant::now();
+        milky.search_position(10);
+        milky.make_move(milky.pv_table[0][0], MoveKind::AllMoves);
+        milky.print_board();
+        // print_best_move(&milky, start, depth);
+        // perft_test(&mut milky, depth);
 
         return Ok(());
     }
+
+    let stdin = std::io::stdin();
+    let mut handle = stdin.lock();
+    let mut line = String::new();
 
     loop {
         line.clear();
