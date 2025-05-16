@@ -1,5 +1,3 @@
-use milky_bitboard::Move;
-
 use crate::MATE_LOWER_BOUND;
 use crate::zobrist::ZobristKey;
 

@@ -1,5 +1,5 @@
 use crate::error::Result;
-use crate::{BitBoard, Error, Pieces, Side, Square};
+use crate::{Error, Pieces, Side, Square};
 
 bitflags::bitflags! {
     /// ┌──────┬──────────────────┐
