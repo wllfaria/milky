@@ -31,8 +31,4 @@ impl Random {
 
         n1 | (n2 << 16) | (n3 << 32) | (n4 << 48)
     }
-
-    pub fn gen_magic_number_candidate(&mut self) -> u64 {
-        self.gen_u64() & self.gen_u64() & self.gen_u64()
-    }
 }

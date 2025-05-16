@@ -1,4 +1,5 @@
 mod evaluate;
+mod magic;
 mod random;
 pub mod transposition_table;
 pub mod zobrist;
@@ -11,7 +12,6 @@ use milky_bitboard::{
     BitBoard, CastlingRights, Move, MoveFlags, Pieces, PromotedPieces, Rank, Side, Square,
 };
 use milky_fen::FenParts;
-use random::Random;
 use transposition_table::{TTFlag, TranspositionTable};
 use zobrist::{GamePosition, Zobrist, ZobristKey};
 
@@ -185,7 +185,7 @@ pub static KING_POS_SCORE: [i32; 64] = [
 ];
 
 #[rustfmt::skip]
-static BISHOP_RELEVANT_OCCUPANCIES: [u32; 64] = [
+pub static BISHOP_RELEVANT_OCCUPANCIES: [u32; 64] = [
     6, 5, 5, 5, 5, 5, 5, 6,
     5, 5, 5, 5, 5, 5, 5, 5,
     5, 5, 7, 7, 7, 7, 5, 5,
@@ -265,7 +265,7 @@ static BISHOP_MAGIC_BITBOARDS: [BitBoard; 64] = [
 ];
 
 #[rustfmt::skip]
-static ROOK_RELEVANT_OCCUPANCIES: [u32; 64] = [
+pub static ROOK_RELEVANT_OCCUPANCIES: [u32; 64] = [
     12, 11, 11, 11, 11, 11, 11, 12,
     11, 10, 10, 10, 10, 10, 10, 11,
     11, 10, 10, 10, 10, 10, 10, 11,
@@ -471,7 +471,7 @@ fn compute_king_attacks(square: Square) -> BitBoard {
     attacks
 }
 
-fn compute_bishop_attacks(square: Square, blockers: BitBoard) -> BitBoard {
+pub fn compute_bishop_attacks(square: Square, blockers: BitBoard) -> BitBoard {
     let mut attacks = BitBoard::default();
 
     let directions = [
@@ -505,7 +505,7 @@ fn compute_bishop_attacks(square: Square, blockers: BitBoard) -> BitBoard {
     attacks
 }
 
-fn compute_rook_attacks(square: Square, blockers: BitBoard) -> BitBoard {
+pub fn compute_rook_attacks(square: Square, blockers: BitBoard) -> BitBoard {
     let mut attacks = BitBoard::default();
 
     let directions = [
@@ -539,7 +539,7 @@ fn compute_rook_attacks(square: Square, blockers: BitBoard) -> BitBoard {
     attacks
 }
 
-fn compute_bishop_blockers(square: Square) -> BitBoard {
+pub fn compute_bishop_blockers(square: Square) -> BitBoard {
     let mut blockers = BitBoard::default();
 
     let directions = [
@@ -567,7 +567,7 @@ fn compute_bishop_blockers(square: Square) -> BitBoard {
     blockers
 }
 
-fn compute_rook_blockers(square: Square) -> BitBoard {
+pub fn compute_rook_blockers(square: Square) -> BitBoard {
     let mut blockers = BitBoard::default();
 
     let directions = [
@@ -600,7 +600,7 @@ fn compute_rook_blockers(square: Square) -> BitBoard {
     blockers
 }
 
-fn set_occupancy(index: usize, bits_in_mask: u32, mut attackers: BitBoard) -> BitBoard {
+pub fn set_occupancy(index: usize, bits_in_mask: u32, mut attackers: BitBoard) -> BitBoard {
     let mut occupancy = BitBoard::default();
 
     for count in 0..bits_in_mask {
@@ -672,7 +672,6 @@ impl Default for BoardSnapshot {
 
 #[derive(Debug)]
 pub struct Milky {
-    rng: Random,
     pub boards: [BitBoard; 12],
     pub occupancies: [BitBoard; 3],
     pub side_to_move: Side,
@@ -715,7 +714,6 @@ impl Default for Milky {
 impl Milky {
     pub fn new() -> Self {
         Self {
-            rng: Random::default(),
             boards: [BitBoard::empty(); 12],
             occupancies: [BitBoard::empty(); 3],
             side_to_move: Side::White,
@@ -1208,103 +1206,6 @@ impl Milky {
         println!();
     }
 
-    fn print_move_list(&self) {
-        println!();
-        println!("move     piece    capture    double    en passant    castling");
-
-        for piece_move in self.moves.iter().take(self.move_count) {
-            println!(
-                "{piece_move}    {}        {:<5}      {:<5}     {:<5}         {:<5}",
-                piece_move.piece(),
-                piece_move.is_capture(),
-                piece_move.is_double_push(),
-                piece_move.is_en_passant(),
-                piece_move.is_castling(),
-            );
-        }
-
-        println!();
-        println!("total moves: {}", self.move_count);
-    }
-
-    fn init_magic_numbers(&mut self) {
-        for square in 0..64 {
-            let square = Square::from_u64_unchecked(square);
-            let rook_magic = self.find_magic_number(
-                square,
-                ROOK_RELEVANT_OCCUPANCIES[square as usize],
-                SliderPieceKind::Rook,
-            );
-            println!("0x{rook_magic:X},");
-        }
-
-        println!();
-        println!();
-
-        for square in 0..64 {
-            let square = Square::from_u64_unchecked(square);
-            let bishop_magic = self.find_magic_number(
-                square,
-                BISHOP_RELEVANT_OCCUPANCIES[square as usize],
-                SliderPieceKind::Bishop,
-            );
-            println!("0x{bishop_magic:X},");
-        }
-    }
-
-    fn find_magic_number(
-        &mut self,
-        square: Square,
-        relevant_bits: u32,
-        kind: SliderPieceKind,
-    ) -> u64 {
-        let mut occupancies = [BitBoard::default(); 4096];
-        let mut attacks = [BitBoard::default(); 4096];
-        let mut used_attacks = [BitBoard::default(); 4096];
-
-        let blockers = match kind {
-            SliderPieceKind::Rook => compute_rook_blockers(square),
-            SliderPieceKind::Bishop => compute_bishop_blockers(square),
-        };
-
-        let occupancy_idx = 1 << relevant_bits;
-
-        for index in 0..occupancy_idx {
-            occupancies[index] = set_occupancy(index, relevant_bits, blockers);
-
-            attacks[index] = match kind {
-                SliderPieceKind::Rook => compute_rook_attacks(square, occupancies[index]),
-                SliderPieceKind::Bishop => compute_bishop_attacks(square, occupancies[index]),
-            }
-        }
-
-        'search: for _ in 0..100_000_000 {
-            let magic_number = self.rng.gen_magic_number_candidate();
-            if ((blockers.wrapping_mul(magic_number)) & 0xFF00_0000_0000_0000).count_ones() < 6 {
-                continue;
-            }
-
-            for attack in used_attacks.iter_mut().take(occupancy_idx) {
-                *attack = BitBoard::default()
-            }
-
-            for index in 0..occupancy_idx {
-                let magic_index = ((occupancies[index].wrapping_mul(magic_number))
-                    >> (64 - relevant_bits)) as usize;
-
-                if used_attacks[magic_index].is_empty() {
-                    used_attacks[magic_index] = attacks[index];
-                } else if used_attacks[magic_index] != attacks[index] {
-                    continue 'search;
-                }
-            }
-
-            return magic_number;
-        }
-
-        0
-    }
-
     #[inline]
     pub fn is_square_attacked(&self, square: Square, side: Side) -> bool {
         let (
@@ -1364,28 +1265,6 @@ impl Milky {
         }
 
         false
-    }
-
-    fn print_attacked_squares(&self, side: Side) {
-        println!();
-
-        for rank in 0..8 {
-            let mut line = String::with_capacity(20);
-            line.push_str(&format!("  {} ", 8 - rank));
-
-            for file in 0..8 {
-                let square = Square::from_u64_unchecked(rank * 8 + file);
-                let bit = if self.is_square_attacked(square, side) { '1' } else { '0' };
-
-                line.push(' ');
-                line.push(bit);
-            }
-
-            println!("{line}");
-        }
-
-        println!();
-        println!("     a b c d e f g h");
     }
 
     pub fn generate_moves(&mut self) {
