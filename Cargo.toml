@@ -4,7 +4,7 @@ members = [
     "milky_chess",
     "milky_fen",
     "milky_bitboard",
-    "milky_protocols",
+    "milky_uci",
     "milky_cli",
 ]
 
@@ -16,7 +16,7 @@ version = "0.1.0"
 milky_chess = { path = "milky_chess" }
 milky_fen = { path = "milky_fen" }
 milky_bitboard = { path = "milky_bitboard" }
-milky_protocols = { path = "milky_protocols" }
+milky_uci = { path = "milky_uci" }
 milky_cli = { path = "milky_cli" }
 
 thiserror = { version = "2.0.12" }

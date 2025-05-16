@@ -16,6 +16,7 @@ use transposition_table::{TTFlag, TranspositionTable};
 use zobrist::{GamePosition, Zobrist, ZobristKey};
 
 pub static MAX_PLY: usize = 64;
+pub static MAX_REPETITIONS: usize = 1024;
 pub static INFINITY: i32 = 50000;
 pub static MATE_UPPER_BOUND: i32 = 49000;
 pub static MATE_LOWER_BOUND: i32 = 48000;
@@ -106,14 +107,6 @@ pub static PIECE_SCORE: [i32; 12] = [
 /// K 100 200 300 400 500 600
 ///
 /// The table contains twice the size above to enable indexing with `Pieces`.
-///
-/// # Usage:
-/// ```rust
-/// let attacker = Pieces::WhitePawn;
-/// let victim = Pieces::BlackQueen;
-///
-/// let score = MVV_LVA[attacker][victim];
-/// ```
 #[rustfmt::skip]
 static MVV_LVA: [[i32; 12]; 12] = [
     [105, 205, 305, 405, 505, 605,  105, 205, 305, 405, 505, 605],
@@ -702,6 +695,9 @@ pub struct Milky {
 
     pub zobrist: Zobrist,
     pub transposition_table: TranspositionTable,
+
+    pub repetition_table: [ZobristKey; MAX_REPETITIONS],
+    pub repetition_index: usize,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
@@ -739,6 +735,8 @@ impl Milky {
             follow_pv: false,
             zobrist: Zobrist::new(),
             transposition_table: TranspositionTable::new(),
+            repetition_table: [ZobristKey::default(); MAX_REPETITIONS],
+            repetition_index: 0,
         }
     }
 
@@ -824,6 +822,11 @@ impl Milky {
         }
     }
 
+    pub fn record_repetition(&mut self) {
+        self.repetition_index += 1;
+        self.repetition_table[self.repetition_index] = self.zobrist.position;
+    }
+
     fn quiescence(&mut self, mut alpha: Wrapping<i32>, beta: Wrapping<i32>) -> i32 {
         self.nodes += 1;
 
@@ -846,15 +849,18 @@ impl Milky {
 
         for piece_move in self.moves.into_iter().take(self.move_count) {
             self.ply += 1;
+            self.record_repetition();
 
             if !self.make_move(piece_move, MoveKind::Captures) {
                 self.ply -= 1;
+                self.repetition_index -= 1;
                 continue;
             }
 
             let score = -Wrapping(self.quiescence(-beta, -alpha));
 
             self.ply -= 1;
+            self.repetition_index -= 1;
 
             self.undo_move();
 
@@ -870,11 +876,19 @@ impl Milky {
         alpha.0
     }
 
+    fn is_repetition(&self) -> bool {
+        self.repetition_table[0..self.repetition_index].contains(&self.zobrist.position)
+    }
+
     fn negamax(&mut self, mut alpha: Wrapping<i32>, beta: Wrapping<i32>, mut depth: u8) -> i32 {
         const FULL_DEPTH_MOVES: i32 = 4;
         const REDUCTION_LIMIT: u8 = 3;
 
         let mut tt_flag = TTFlag::Alpha;
+
+        if self.ply != 0 && self.is_repetition() {
+            return 0;
+        }
 
         let pv_node = beta.0 - alpha.0 > 1;
 
@@ -915,6 +929,7 @@ impl Milky {
             self.snapshot_board();
 
             self.ply += 1;
+            self.record_repetition();
 
             if self.en_passant.is_available() {
                 self.zobrist.position ^= self.zobrist.en_passant[self.en_passant];
@@ -927,6 +942,7 @@ impl Milky {
 
             let score = -Wrapping(self.negamax(-beta, -beta + Wrapping(1), depth - 1 - 2));
             self.ply -= 1;
+            self.repetition_index -= 1;
             self.undo_move();
 
             if score >= beta {
@@ -953,9 +969,11 @@ impl Milky {
 
         for piece_move in self.moves.into_iter().take(self.move_count) {
             self.ply += 1;
+            self.record_repetition();
 
             if !self.make_move(piece_move, MoveKind::AllMoves) {
                 self.ply -= 1;
+                self.repetition_index -= 1;
                 continue;
             }
 
@@ -1001,6 +1019,7 @@ impl Milky {
             };
 
             self.ply -= 1;
+            self.repetition_index -= 1;
             self.undo_move();
             moves_searched += 1;
 

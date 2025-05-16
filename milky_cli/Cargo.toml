@@ -5,5 +5,9 @@ edition.workspace = true
 
 [dependencies]
 milky_chess.workspace = true
-milky_protocols.workspace = true
+milky_uci.workspace = true
 milky_fen.workspace = true
+
+[[bin]]
+name = "milky"
+path = "./src/main.rs"
