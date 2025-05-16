@@ -152,7 +152,7 @@ version = "0.1.0"
 dependencies = [
  "milky_chess",
  "milky_fen",
- "milky_protocols",
+ "milky_uci",
 ]
 
 [[package]]
@@ -165,7 +165,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "milky_protocols"
+name = "milky_uci"
 version = "0.1.0"
 dependencies = [
  "milky_bitboard",
