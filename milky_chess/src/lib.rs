@@ -1,6 +1,6 @@
 mod evaluate;
-mod magic;
 mod random;
+mod time_manager;
 pub mod transposition_table;
 pub mod zobrist;
 
@@ -12,6 +12,7 @@ use milky_bitboard::{
     BitBoard, CastlingRights, Move, MoveFlags, Pieces, PromotedPieces, Rank, Side, Square,
 };
 use milky_fen::FenParts;
+use random::Random;
 use transposition_table::{TTFlag, TranspositionTable};
 use zobrist::{GamePosition, Zobrist, ZobristKey};
 
@@ -107,6 +108,7 @@ pub static PIECE_SCORE: [i32; 12] = [
 /// K 100 200 300 400 500 600
 ///
 /// The table contains twice the size above to enable indexing with `Pieces`.
+///
 #[rustfmt::skip]
 static MVV_LVA: [[i32; 12]; 12] = [
     [105, 205, 305, 405, 505, 605,  105, 205, 305, 405, 505, 605],
@@ -185,7 +187,7 @@ pub static KING_POS_SCORE: [i32; 64] = [
 ];
 
 #[rustfmt::skip]
-pub static BISHOP_RELEVANT_OCCUPANCIES: [u32; 64] = [
+static BISHOP_RELEVANT_OCCUPANCIES: [u32; 64] = [
     6, 5, 5, 5, 5, 5, 5, 6,
     5, 5, 5, 5, 5, 5, 5, 5,
     5, 5, 7, 7, 7, 7, 5, 5,
@@ -265,7 +267,7 @@ static BISHOP_MAGIC_BITBOARDS: [BitBoard; 64] = [
 ];
 
 #[rustfmt::skip]
-pub static ROOK_RELEVANT_OCCUPANCIES: [u32; 64] = [
+static ROOK_RELEVANT_OCCUPANCIES: [u32; 64] = [
     12, 11, 11, 11, 11, 11, 11, 12,
     11, 10, 10, 10, 10, 10, 10, 11,
     11, 10, 10, 10, 10, 10, 10, 11,
@@ -471,7 +473,7 @@ fn compute_king_attacks(square: Square) -> BitBoard {
     attacks
 }
 
-pub fn compute_bishop_attacks(square: Square, blockers: BitBoard) -> BitBoard {
+fn compute_bishop_attacks(square: Square, blockers: BitBoard) -> BitBoard {
     let mut attacks = BitBoard::default();
 
     let directions = [
@@ -505,7 +507,7 @@ pub fn compute_bishop_attacks(square: Square, blockers: BitBoard) -> BitBoard {
     attacks
 }
 
-pub fn compute_rook_attacks(square: Square, blockers: BitBoard) -> BitBoard {
+fn compute_rook_attacks(square: Square, blockers: BitBoard) -> BitBoard {
     let mut attacks = BitBoard::default();
 
     let directions = [
@@ -539,7 +541,7 @@ pub fn compute_rook_attacks(square: Square, blockers: BitBoard) -> BitBoard {
     attacks
 }
 
-pub fn compute_bishop_blockers(square: Square) -> BitBoard {
+fn compute_bishop_blockers(square: Square) -> BitBoard {
     let mut blockers = BitBoard::default();
 
     let directions = [
@@ -567,7 +569,7 @@ pub fn compute_bishop_blockers(square: Square) -> BitBoard {
     blockers
 }
 
-pub fn compute_rook_blockers(square: Square) -> BitBoard {
+fn compute_rook_blockers(square: Square) -> BitBoard {
     let mut blockers = BitBoard::default();
 
     let directions = [
@@ -600,7 +602,7 @@ pub fn compute_rook_blockers(square: Square) -> BitBoard {
     blockers
 }
 
-pub fn set_occupancy(index: usize, bits_in_mask: u32, mut attackers: BitBoard) -> BitBoard {
+fn set_occupancy(index: usize, bits_in_mask: u32, mut attackers: BitBoard) -> BitBoard {
     let mut occupancy = BitBoard::default();
 
     for count in 0..bits_in_mask {
@@ -672,6 +674,7 @@ impl Default for BoardSnapshot {
 
 #[derive(Debug)]
 pub struct Milky {
+    rng: Random,
     pub boards: [BitBoard; 12],
     pub occupancies: [BitBoard; 3],
     pub side_to_move: Side,
@@ -714,6 +717,7 @@ impl Default for Milky {
 impl Milky {
     pub fn new() -> Self {
         Self {
+            rng: Random::default(),
             boards: [BitBoard::empty(); 12],
             occupancies: [BitBoard::empty(); 3],
             side_to_move: Side::White,
@@ -1204,6 +1208,86 @@ impl Milky {
         println!("     Enpassant:    {}", self.en_passant);
         println!("     Zobrist key: {}", self.zobrist.position);
         println!();
+    }
+
+    #[allow(dead_code)]
+    fn init_magic_numbers(&mut self) {
+        for square in 0..64 {
+            let square = Square::from_u64_unchecked(square);
+            let rook_magic = self.find_magic_number(
+                square,
+                ROOK_RELEVANT_OCCUPANCIES[square as usize],
+                SliderPieceKind::Rook,
+            );
+            println!("0x{rook_magic:X},");
+        }
+
+        println!();
+        println!();
+
+        for square in 0..64 {
+            let square = Square::from_u64_unchecked(square);
+            let bishop_magic = self.find_magic_number(
+                square,
+                BISHOP_RELEVANT_OCCUPANCIES[square as usize],
+                SliderPieceKind::Bishop,
+            );
+            println!("0x{bishop_magic:X},");
+        }
+    }
+
+    #[allow(dead_code)]
+    fn find_magic_number(
+        &mut self,
+        square: Square,
+        relevant_bits: u32,
+        kind: SliderPieceKind,
+    ) -> u64 {
+        let mut occupancies = [BitBoard::default(); 4096];
+        let mut attacks = [BitBoard::default(); 4096];
+        let mut used_attacks = [BitBoard::default(); 4096];
+
+        let blockers = match kind {
+            SliderPieceKind::Rook => compute_rook_blockers(square),
+            SliderPieceKind::Bishop => compute_bishop_blockers(square),
+        };
+
+        let occupancy_idx = 1 << relevant_bits;
+
+        for index in 0..occupancy_idx {
+            occupancies[index] = set_occupancy(index, relevant_bits, blockers);
+
+            attacks[index] = match kind {
+                SliderPieceKind::Rook => compute_rook_attacks(square, occupancies[index]),
+                SliderPieceKind::Bishop => compute_bishop_attacks(square, occupancies[index]),
+            }
+        }
+
+        'search: for _ in 0..100_000_000 {
+            let magic_number = self.rng.gen_u64() & self.rng.gen_u64() & self.rng.gen_u64();
+            if ((blockers.wrapping_mul(magic_number)) & 0xFF00_0000_0000_0000).count_ones() < 6 {
+                continue;
+            }
+
+            for attack in used_attacks.iter_mut().take(occupancy_idx) {
+                *attack = BitBoard::default()
+            }
+
+            for index in 0..occupancy_idx {
+                let magic_index = ((occupancies[index].wrapping_mul(magic_number))
+                    >> (64 - relevant_bits)) as usize;
+
+                if used_attacks[magic_index].is_empty() {
+                    used_attacks[magic_index] = attacks[index];
+                } else if used_attacks[magic_index] != attacks[index] {
+                    continue 'search;
+                }
+            }
+
+            return magic_number;
+        }
+
+        0
     }
 
     #[inline]

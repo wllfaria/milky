@@ -252,7 +252,7 @@ fn parse_register_command<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::uci::command::{GoCommand, RegisterCommand, START_POSITION, SetOptionCommand};
+    use crate::command::{GoCommand, RegisterCommand, START_POSITION, SetOptionCommand};
 
     #[test]
     fn test_parse_uci_protocol_command() {

@@ -2,7 +2,6 @@
 name = "milky_chess"
 version.workspace = true
 edition.workspace = true
-lints.workspace = true
 
 [dependencies]
 milky_bitboard.workspace = true
