@@ -61,7 +61,7 @@ pub fn parse_fen_string(fen_string: &str) -> Result<FenParts> {
     })
 }
 
-fn split_fen_string<'fen>(fen_string: &'fen str) -> Result<UnparsedFenParts<'fen>> {
+fn split_fen_string(fen_string: &str) -> Result<UnparsedFenParts<'_>> {
     if fen_string.is_empty() {
         return Err(Error::MalformedFenString(
             "FEN string cannot be empty".into(),
