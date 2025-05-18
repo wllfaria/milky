@@ -1,4 +1,8 @@
-use milky_bitboard::{Move, PromotedPieces, Square};
+use std::time::Duration;
+
+use milky_bitboard::{Move, PromotionPieces, Side, Square};
+use milky_chess::moves::Movable;
+use milky_chess::time_manager::{ConventionalTimeControl, IntoTimeControl, TimeControl};
 use milky_fen::FenParts;
 
 use super::error::Result;
@@ -205,12 +209,26 @@ impl std::fmt::Display for RegisterCommand {
 pub struct PartialMove {
     pub source: Square,
     pub target: Square,
-    pub promotion: PromotedPieces,
+    pub promotion: PromotionPieces,
 }
 
 impl std::fmt::Display for PartialMove {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}{}{}", self.source, self.target, self.promotion)
+    }
+}
+
+impl Movable for PartialMove {
+    fn source(&self) -> Square {
+        self.source
+    }
+
+    fn target(&self) -> Square {
+        self.target
+    }
+
+    fn promotion(&self) -> PromotionPieces {
+        self.promotion
     }
 }
 
@@ -273,7 +291,7 @@ impl std::fmt::Display for PositionCommand {
 #[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct GoCommand {
     /// Restricts search to only the specified moves.
-    pub search_moves: Vec<PartialMove>,
+    pub search_moves: Option<Vec<PartialMove>>,
     /// Engine is to ponder during opponent's time.
     pub ponder: bool,
     /// Remaning time for white (in ms).
@@ -285,22 +303,107 @@ pub struct GoCommand {
     /// Black increment per move (in ms).
     pub black_inc: Option<u64>,
     /// How many moves until next time control.
-    pub movestogo: Option<u32>,
+    pub moves_to_go: Option<u32>,
     /// Search with fixed ply depth.
-    pub depth: u8,
+    pub depth: Option<u8>,
     /// Search only X number of nodes.
     pub nodes: Option<u64>,
     /// Search for a forced mate in N plies.
-    pub mate: Option<u32>,
+    pub mate: Option<u8>,
     /// Search for this exact amount of time.
-    pub movetime: Option<u64>,
+    pub move_time: Option<u64>,
     /// Search indefinitely until stopped via `UciCommand::Stop`.
     pub infinite: bool,
 }
 
 impl std::fmt::Display for GoCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "go depth {}", self.depth)
+        let mut line = String::from("go");
+
+        if self.ponder {
+            line.push_str(" ponder");
+        }
+
+        if let Some(white_time) = self.white_time {
+            line.push_str(&format!(" wtime {white_time}"))
+        }
+
+        if let Some(black_time) = self.black_time {
+            line.push_str(&format!(" btime {black_time}"))
+        }
+
+        if let Some(white_inc) = self.white_inc {
+            line.push_str(&format!(" winc {white_inc}"))
+        }
+
+        if let Some(black_inc) = self.black_inc {
+            line.push_str(&format!(" binc {black_inc}"))
+        }
+
+        if let Some(moves_to_go) = self.moves_to_go {
+            line.push_str(&format!(" movestogo {moves_to_go}"));
+        }
+
+        if let Some(depth) = self.depth {
+            line.push_str(&format!(" depth {depth}"));
+        }
+
+        if let Some(nodes) = self.nodes {
+            line.push_str(&format!(" nodes {nodes}"));
+        }
+
+        if let Some(mate) = self.mate {
+            line.push_str(&format!(" mate {mate}"));
+        }
+
+        if let Some(move_time) = self.move_time {
+            line.push_str(&format!(" movetime {move_time}"));
+        }
+
+        if self.infinite {
+            line.push_str(" infinite");
+        }
+
+        if let Some(search_moves) = &self.search_moves {
+            line.push_str(" searchmoves");
+            for m in search_moves {
+                line.push_str(&format!(" {m}"))
+            }
+        }
+
+        write!(f, "{line}")
+    }
+}
+
+impl IntoTimeControl for GoCommand {
+    fn into_time_control(self, side_to_move: milky_bitboard::Side) -> TimeControl {
+        if let Some(move_time_ms) = self.move_time {
+            TimeControl::MoveTime(Duration::from_millis(move_time_ms))
+        } else if let Some(mate_in) = self.mate {
+            TimeControl::MateIn(mate_in)
+        } else if let Some(depth) = self.depth {
+            TimeControl::FixedDepth(depth)
+        } else if let Some(nodes) = self.nodes {
+            TimeControl::FixedNodes(nodes)
+        } else if self.infinite {
+            TimeControl::Infinite
+        } else {
+            let (time, inc) = if side_to_move == Side::White {
+                let white_time = self.white_time.unwrap_or_default();
+                let white_inc = self.white_inc.unwrap_or_default();
+                (white_time, white_inc)
+            } else {
+                let black_time = self.black_time.unwrap_or_default();
+                let black_inc = self.black_inc.unwrap_or_default();
+                (black_time, black_inc)
+            };
+
+            TimeControl::Conventional(ConventionalTimeControl {
+                time_left: Duration::from_millis(time),
+                increment: Duration::from_millis(inc),
+                moves_to_go: self.moves_to_go,
+            })
+        }
     }
 }
 
@@ -671,9 +774,9 @@ mod tests {
         let source = Square::from_algebraic_str(&move_str[0..2]).unwrap();
         let target = Square::from_algebraic_str(&move_str[2..4]).unwrap();
         let promotion = if move_str.len() == 5 {
-            PromotedPieces::from_algebraic_str(&move_str[4..]).unwrap()
+            PromotionPieces::from_algebraic_str(&move_str[4..]).unwrap()
         } else {
-            PromotedPieces::NoPromotion
+            PromotionPieces::NoPromotion
         };
         PartialMove {
             source,

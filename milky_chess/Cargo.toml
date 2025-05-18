@@ -16,6 +16,5 @@ divan = "0.1.21"
 name = "perft"
 harness = false
 
-[[bench]]
-name = "search"
-harness = false
+[features]
+bench = []

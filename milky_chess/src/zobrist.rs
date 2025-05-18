@@ -70,7 +70,7 @@ impl Zobrist {
         zobrist
     }
 
-    pub fn init(&mut self) {
+    fn init(&mut self) {
         let mut rng = crate::random::Random::new();
 
         for piece in Pieces::iter() {

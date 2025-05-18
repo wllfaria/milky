@@ -26,7 +26,7 @@ bitflags::bitflags! {
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
-pub enum PromotedPieces {
+pub enum PromotionPieces {
     #[default]
     NoPromotion,
     Knight,
@@ -35,19 +35,19 @@ pub enum PromotedPieces {
     Queen,
 }
 
-impl std::fmt::Display for PromotedPieces {
+impl std::fmt::Display for PromotionPieces {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PromotedPieces::NoPromotion => write!(f, ""),
-            PromotedPieces::Knight => write!(f, "n"),
-            PromotedPieces::Bishop => write!(f, "b"),
-            PromotedPieces::Rook => write!(f, "r"),
-            PromotedPieces::Queen => write!(f, "q"),
+            PromotionPieces::NoPromotion => write!(f, ""),
+            PromotionPieces::Knight => write!(f, "n"),
+            PromotionPieces::Bishop => write!(f, "b"),
+            PromotionPieces::Rook => write!(f, "r"),
+            PromotionPieces::Queen => write!(f, "q"),
         }
     }
 }
 
-impl PromotedPieces {
+impl PromotionPieces {
     pub fn from_u8_unchecked(value: u8) -> Self {
         match value {
             0 => Self::NoPromotion,
@@ -73,27 +73,27 @@ impl PromotedPieces {
 
     pub fn into_piece(self, side: Side) -> Pieces {
         match self {
-            PromotedPieces::NoPromotion => match side {
+            PromotionPieces::NoPromotion => match side {
                 Side::White => Pieces::WhitePawn,
                 Side::Black => Pieces::BlackPawn,
                 _ => unreachable!(),
             },
-            PromotedPieces::Knight => match side {
+            PromotionPieces::Knight => match side {
                 Side::White => Pieces::WhiteKnight,
                 Side::Black => Pieces::BlackKnight,
                 _ => unreachable!(),
             },
-            PromotedPieces::Bishop => match side {
+            PromotionPieces::Bishop => match side {
                 Side::White => Pieces::WhiteBishop,
                 Side::Black => Pieces::BlackBishop,
                 _ => unreachable!(),
             },
-            PromotedPieces::Rook => match side {
+            PromotionPieces::Rook => match side {
                 Side::White => Pieces::WhiteRook,
                 Side::Black => Pieces::BlackRook,
                 _ => unreachable!(),
             },
-            PromotedPieces::Queen => match side {
+            PromotionPieces::Queen => match side {
                 Side::White => Pieces::WhiteQueen,
                 Side::Black => Pieces::BlackQueen,
                 _ => unreachable!(),
@@ -102,7 +102,7 @@ impl PromotedPieces {
     }
 
     pub fn is_promoting(&self) -> bool {
-        *self != PromotedPieces::NoPromotion
+        *self != PromotionPieces::NoPromotion
     }
 }
 
@@ -164,7 +164,7 @@ impl Move {
         source: Square,
         target: Square,
         piece: Pieces,
-        promoted: PromotedPieces,
+        promoted: PromotionPieces,
         flags: MoveFlags,
     ) -> Self {
         let encoded = (source as u32)
@@ -188,8 +188,8 @@ impl Move {
         Pieces::from_u8_unchecked(((self.0 >> 12) & 0xF) as u8)
     }
 
-    pub fn promotion(&self) -> PromotedPieces {
-        PromotedPieces::from_u8_unchecked(((self.0 >> 16) & 0xF) as u8)
+    pub fn promotion(&self) -> PromotionPieces {
+        PromotionPieces::from_u8_unchecked(((self.0 >> 16) & 0xF) as u8)
     }
 
     pub fn is_capture(&self) -> bool {

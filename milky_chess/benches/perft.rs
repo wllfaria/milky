@@ -1,4 +1,5 @@
-use milky_chess::{Milky, MoveKind};
+use milky_chess::Milky;
+use milky_chess::moves::{MoveKind, generate_moves_bench, make_move_bench};
 
 fn perft_driver(milky: &mut Milky, nodes: &mut usize, depth: u8) {
     if depth == 0 {
@@ -6,16 +7,22 @@ fn perft_driver(milky: &mut Milky, nodes: &mut usize, depth: u8) {
         return;
     }
 
-    milky.generate_moves();
+    generate_moves_bench(&mut milky.move_ctx());
 
-    for piece_move in milky.moves.into_iter().take(milky.move_count) {
-        if !milky.make_move(piece_move, MoveKind::AllMoves) {
+    for piece_move in milky
+        .search_state()
+        .moves
+        .into_iter()
+        .take(milky.search_state().move_count)
+    {
+        let is_valid = make_move_bench(&mut milky.move_ctx(), piece_move, MoveKind::AllMoves);
+        if !is_valid {
             continue;
         }
 
         perft_driver(milky, nodes, depth - 1);
 
-        milky.undo_move();
+        milky.zobrist_mut().position = milky.board_state_mut().undo_move();
     }
 }
 
@@ -27,7 +34,7 @@ fn perft_initial_position(b: divan::Bencher, depth: u8) {
 
     b.bench_local(|| {
         let mut milky = Milky::new();
-        milky.load_fen(fen.clone());
+        milky.load_position(fen.clone());
 
         let mut nodes = 0;
         perft_driver(&mut milky, &mut nodes, depth);
@@ -44,7 +51,7 @@ fn perft_kiwipete_position(b: divan::Bencher, depth: u8) {
 
     b.bench_local(|| {
         let mut milky = Milky::new();
-        milky.load_fen(fen.clone());
+        milky.load_position(fen.clone());
 
         let mut nodes = 0;
         perft_driver(&mut milky, &mut nodes, depth);
@@ -61,7 +68,7 @@ fn perft_endgame_position(b: divan::Bencher, depth: u8) {
 
     b.bench_local(|| {
         let mut milky = Milky::new();
-        milky.load_fen(fen.clone());
+        milky.load_position(fen.clone());
 
         let mut nodes = 0;
         perft_driver(&mut milky, &mut nodes, depth);
@@ -78,7 +85,7 @@ fn perft_complex_position(b: divan::Bencher, depth: u8) {
 
     b.bench_local(|| {
         let mut milky = Milky::new();
-        milky.load_fen(fen.clone());
+        milky.load_position(fen.clone());
 
         let mut nodes = 0;
         perft_driver(&mut milky, &mut nodes, depth);
@@ -95,7 +102,7 @@ fn perft_knight_fork(b: divan::Bencher, depth: u8) {
 
     b.bench_local(|| {
         let mut milky = Milky::new();
-        milky.load_fen(fen.clone());
+        milky.load_position(fen.clone());
 
         let mut nodes = 0;
         perft_driver(&mut milky, &mut nodes, depth);
@@ -112,7 +119,7 @@ fn perft_italian_game(b: divan::Bencher, depth: u8) {
 
     b.bench_local(|| {
         let mut milky = Milky::new();
-        milky.load_fen(fen.clone());
+        milky.load_position(fen.clone());
 
         let mut nodes = 0;
         perft_driver(&mut milky, &mut nodes, depth);

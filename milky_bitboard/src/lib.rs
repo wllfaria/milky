@@ -5,7 +5,7 @@ mod moves;
 mod square;
 
 pub use error::Error;
-pub use moves::{Move, MoveFlags, PromotedPieces};
+pub use moves::{Move, MoveFlags, PromotionPieces};
 pub use square::Square;
 
 pub trait IntoU64 {

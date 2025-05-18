@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use milky_bitboard::{PromotedPieces, Square};
+use milky_bitboard::{PromotionPieces, Square};
 
 use super::command::{
     GoCommand, PartialMove, PositionCommand, RegisterCommand, SetOptionCommand, UciCommand,
@@ -104,9 +104,9 @@ fn parse_move(mov: &str) -> Result<PartialMove> {
     let source = Square::from_algebraic_str(&mov[0..2])?;
     let target = Square::from_algebraic_str(&mov[2..4])?;
     let promotion = if mov.len() == 5 {
-        PromotedPieces::from_algebraic_str(&mov[4..])?
+        PromotionPieces::from_algebraic_str(&mov[4..])?
     } else {
-        PromotedPieces::NoPromotion
+        PromotionPieces::NoPromotion
     };
 
     Ok(PartialMove {
@@ -118,23 +118,24 @@ fn parse_move(mov: &str) -> Result<PartialMove> {
 
 fn parse_go_command<'a>(mut split: impl Iterator<Item = &'a str>) -> Result<Option<UciCommand>> {
     let mut command = GoCommand {
-        depth: 1,
-        search_moves: vec![],
+        depth: None,
+        search_moves: None,
         ponder: false,
         white_time: None,
         black_time: None,
         white_inc: None,
         black_inc: None,
-        movestogo: None,
+        moves_to_go: None,
         nodes: None,
         mate: None,
-        movetime: None,
+        move_time: None,
         infinite: false,
     };
 
     while let Some(next) = split.next() {
         match next {
             "searchmoves" => {
+                let mut search_moves = vec![];
                 for mov in split.by_ref() {
                     if mov.len() > 5 || mov.len() < 4 {
                         // ignore any non-valid moves
@@ -142,19 +143,21 @@ fn parse_go_command<'a>(mut split: impl Iterator<Item = &'a str>) -> Result<Opti
                     }
 
                     let mov = parse_move(mov)?;
-                    command.search_moves.push(mov);
+                    search_moves.push(mov);
                 }
+
+                command.search_moves = Some(search_moves);
             }
             "ponder" => command.ponder = true,
-            "depth" => command.depth = parse_number(&mut split, "depth")?,
+            "depth" => command.depth = Some(parse_number(&mut split, "depth")?),
             "wtime" => command.white_time = Some(parse_number(&mut split, next)?),
             "btime" => command.black_time = Some(parse_number(&mut split, next)?),
             "winc" => command.white_inc = Some(parse_number(&mut split, next)?),
             "binc" => command.black_inc = Some(parse_number(&mut split, next)?),
-            "movestogo" => command.movestogo = Some(parse_number(&mut split, next)?),
+            "movestogo" => command.moves_to_go = Some(parse_number(&mut split, next)?),
             "nodes" => command.nodes = Some(parse_number(&mut split, next)?),
             "mate" => command.mate = Some(parse_number(&mut split, next)?),
-            "movetime" => command.movetime = Some(parse_number(&mut split, next)?),
+            "movetime" => command.move_time = Some(parse_number(&mut split, next)?),
             "infinite" => command.infinite = true,
             other => {
                 return Err(Error::InvalidCommand(format!(
@@ -367,9 +370,9 @@ mod tests {
         let source = Square::from_algebraic_str(&move_str[0..2]).unwrap();
         let target = Square::from_algebraic_str(&move_str[2..4]).unwrap();
         let promotion = if move_str.len() == 5 {
-            PromotedPieces::from_algebraic_str(&move_str[4..]).unwrap()
+            PromotionPieces::from_algebraic_str(&move_str[4..]).unwrap()
         } else {
-            PromotedPieces::NoPromotion
+            PromotionPieces::NoPromotion
         };
         PartialMove {
             source,
@@ -418,7 +421,7 @@ mod tests {
     fn test_parse_go_depth_command() {
         let command = "go depth 5";
         let expected = GoCommand {
-            depth: 5,
+            depth: Some(5),
             ..Default::default()
         };
 
@@ -427,7 +430,7 @@ mod tests {
 
         let command = "     gibberish     go depth 5";
         let expected = GoCommand {
-            depth: 5,
+            depth: Some(5),
             ..Default::default()
         };
 
@@ -447,22 +450,22 @@ mod tests {
         assert_eq!(
             result,
             UciCommand::Go(GoCommand {
-                depth: 20,
+                depth: Some(20),
                 ponder: true,
-                search_moves: vec![
+                search_moves: Some(vec![
                     parse_move("e2e4").unwrap(),
                     parse_move("e7e5").unwrap(),
                     parse_move("b1c3").unwrap(),
                     parse_move("b8c6").unwrap(),
-                ],
+                ]),
                 white_time: Some(10000),
                 black_time: Some(8000),
                 white_inc: Some(100),
                 black_inc: Some(100),
-                movestogo: Some(10),
+                moves_to_go: Some(10),
                 nodes: Some(500000),
                 mate: Some(2),
-                movetime: Some(3000),
+                move_time: Some(3000),
                 infinite: true,
             })
         );
@@ -490,17 +493,17 @@ mod tests {
         assert_eq!(
             result,
             UciCommand::Go(GoCommand {
-                depth: 1,
-                search_moves: vec![],
+                depth: None,
+                search_moves: None,
                 ponder: false,
                 white_time: None,
                 black_time: None,
                 white_inc: None,
                 black_inc: None,
-                movestogo: None,
+                moves_to_go: None,
                 nodes: None,
                 mate: None,
-                movetime: None,
+                move_time: None,
                 infinite: false,
             })
         );

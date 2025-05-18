@@ -1,11 +1,12 @@
 use std::io::BufRead;
 
-use milky_chess::{Milky, MoveKind};
+use milky_chess::Milky;
 use milky_uci::command::{BestMoveCommand, GoCommand, PositionCommand, UciCommand};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     milky_chess::init_attack_tables();
     let mut milky = Milky::new();
+
     let mut uci = milky_uci::Uci;
 
     let stdin = std::io::stdin();
@@ -50,42 +51,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             UciCommand::Option(_) => unreachable!(),
         }
 
-        milky.print_board();
+        println!("{milky}");
     }
 
     Ok(())
 }
 
 fn load_position(milky: &mut Milky, position: PositionCommand) {
-    milky.transposition_table.clear();
-    milky.repetition_index = 0;
-    milky.ply = 0;
-    milky.load_fen(position.fen);
-
-    for move_to_make in position.moves.iter() {
-        milky.generate_moves();
-
-        let valid_move = milky.moves.iter().find(|m| {
-            m.source() == move_to_make.source
-                && m.target() == move_to_make.target
-                && m.promotion() == move_to_make.promotion
-        });
-
-        // TODO: we should probably error on invalid move
-        let Some(&valid_move) = valid_move else {
-            return;
-        };
-
-        milky.record_repetition();
-        milky.make_move(valid_move, MoveKind::AllMoves);
-    }
+    milky.new_game();
+    milky.load_position(position.fen);
+    milky.load_moves(position.moves.into_iter());
 }
 
 fn handle_go_command(milky: &mut Milky, go_command: GoCommand) -> BestMoveCommand {
-    let best_move = milky.search_position(go_command.depth);
+    milky.think(go_command);
 
     BestMoveCommand {
-        best_move: best_move.to_string(),
+        best_move: milky.search_state().best_move().to_string(),
         ponder: None,
     }
 }

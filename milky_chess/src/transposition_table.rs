@@ -1,4 +1,4 @@
-use crate::MATE_LOWER_BOUND;
+use crate::search::MATE_LOWER_BOUND;
 use crate::zobrist::ZobristKey;
 
 static ONE_MB: usize = 0x100000;

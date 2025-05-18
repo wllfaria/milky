@@ -1,10 +1,21 @@
 use std::time::{Duration, Instant};
 
+use milky_bitboard::Side;
+
+pub trait IntoTimeControl {
+    fn into_time_control(self, side_to_move: Side) -> TimeControl;
+}
+
+pub struct TimeManagerContext {
+    pub depth: u8,
+    pub nodes: u64,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct ConventionalTimeControl {
-    time_left: Duration,
-    increment: Duration,
-    moves_to_go: Option<u32>,
+    pub time_left: Duration,
+    pub increment: Duration,
+    pub moves_to_go: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -14,32 +25,30 @@ pub enum TimeControl {
     Infinite,
     FixedDepth(u8),
     FixedNodes(u64),
-    MateIn(u32),
+    MateIn(u8),
 }
 
 #[derive(Debug)]
-pub struct SearchLimits {
+pub(crate) struct SearchLimits {
     start_time: Instant,
     time_control: TimeControl,
-    game_ply: u32,
 }
 
 impl SearchLimits {
+    pub fn new(time_control: TimeControl) -> Self {
+        Self {
+            time_control,
+            start_time: Instant::now(),
+        }
+    }
+
     pub fn start_time(&self) -> Instant {
         self.start_time
-    }
-
-    pub fn time_control(&self) -> TimeControl {
-        self.time_control
-    }
-
-    pub fn game_ply(&self) -> u32 {
-        self.game_ply
     }
 }
 
 #[derive(Debug)]
-pub struct TimeManager {
+pub(crate) struct TimeManager {
     search_limits: SearchLimits,
     stop_time: Option<Instant>,
 }
@@ -68,6 +77,7 @@ impl TimeManager {
             }) => {
                 let mut time_per_move = *time_left / moves_to_go.unwrap_or(40);
                 time_per_move += *increment * 3 / 4;
+                println!("time_per_move: {:?}", time_per_move.as_millis());
                 let safety_margin = Duration::from_millis(50);
                 let stop_time = start_time + time_per_move - safety_margin;
                 self.stop_time = Some(stop_time);
@@ -79,24 +89,24 @@ impl TimeManager {
             TimeControl::Infinite => {}
         }
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+    pub fn should_stop(&self, ctx: TimeManagerContext) -> bool {
+        if let Some(stop_time) = self.stop_time {
+            return Instant::now() >= stop_time;
+        };
 
-    #[test]
-    fn test_aa() {
-        let tm = TimeManager::new(SearchLimits {
-            start_time: Instant::now(),
-            game_ply: 26,
-            time_control: TimeControl::Conventional(ConventionalTimeControl {
-                time_left: Duration::from_millis(180_000),
-                increment: Duration::from_millis(2000),
-                moves_to_go: None,
-            }),
-        });
+        if let TimeControl::FixedDepth(max_depth) = self.search_limits.time_control {
+            return ctx.depth >= max_depth;
+        }
 
-        panic!();
+        if let TimeControl::FixedNodes(max_nodes) = self.search_limits.time_control {
+            return ctx.nodes >= max_nodes;
+        }
+
+        if let TimeControl::MateIn(mate_depth) = self.search_limits.time_control {
+            return ctx.depth > mate_depth * 2;
+        }
+
+        false
     }
 }
