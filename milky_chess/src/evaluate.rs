@@ -182,9 +182,57 @@ pub fn evaluate_position(ctx: &mut EvalContext<'_>) -> i32 {
                 }
                 Pieces::WhiteRook | Pieces::BlackRook => {
                     score += sign * ROOK_POS_SCORE[square_idx];
+
+                    let pawn_board = match ctx.board.side_to_move {
+                        Side::White => ctx.board.pieces[Pieces::WhitePawn],
+                        Side::Black => ctx.board.pieces[Pieces::BlackPawn],
+                        _ => unreachable!(),
+                    };
+                    let enemy_pawn_board = match ctx.board.side_to_move {
+                        Side::White => ctx.board.pieces[Pieces::BlackPawn],
+                        Side::Black => ctx.board.pieces[Pieces::WhitePawn],
+                        _ => unreachable!(),
+                    };
+
+                    // when there is no friendly pawn in front of a rook, we consider it a
+                    // semi-open file, and give it a small bonus
+                    let mask = pawn_board & FILE_MASKS[square.file() as usize];
+                    if mask.is_empty() {
+                        score += sign * SEMI_OPEN_FILE_SCORE;
+                    }
+
+                    // when there is no pawn (enemy or friendly) in front of a rook, we consider it
+                    // a full-open file, and give it a slight bigger bonus
+                    let mask = (pawn_board | enemy_pawn_board) & FILE_MASKS[square.file() as usize];
+                    if mask.is_empty() {
+                        score += sign * OPEN_FILE_SCORE;
+                    }
                 }
                 Pieces::WhiteKing | Pieces::BlackKing => {
                     score += sign * KING_POS_SCORE[square_idx];
+
+                    let pawn_board = match ctx.board.side_to_move {
+                        Side::White => ctx.board.pieces[Pieces::WhitePawn],
+                        Side::Black => ctx.board.pieces[Pieces::BlackPawn],
+                        _ => unreachable!(),
+                    };
+                    let enemy_pawn_board = match ctx.board.side_to_move {
+                        Side::White => ctx.board.pieces[Pieces::BlackPawn],
+                        Side::Black => ctx.board.pieces[Pieces::WhitePawn],
+                        _ => unreachable!(),
+                    };
+
+                    // semi-open and open files for kings works in the same way as they do for
+                    // rooks. Except they are penalties for kings.
+                    let mask = pawn_board & FILE_MASKS[square.file() as usize];
+                    if mask.is_empty() {
+                        score -= sign * SEMI_OPEN_FILE_SCORE;
+                    }
+
+                    let mask = (pawn_board | enemy_pawn_board) & FILE_MASKS[square.file() as usize];
+                    if mask.is_empty() {
+                        score -= sign * OPEN_FILE_SCORE;
+                    }
                 }
                 _ => {}
             };

@@ -8,7 +8,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut milky = Milky::new();
     let mut uci = milky_uci::Uci;
 
-    // let parts = milky_fen::parse_fen_string("8/8/3P4/8/3p4/8/8/8 w - -").unwrap();
+    // let parts = milky_fen::parse_fen_string("6k1/5ppp/8/8/8/8/4PP1P/6K1 w - -").unwrap();
     // milky.load_position(parts);
     // println!("{milky}");
     // println!("score: {}", milky.evaluate());
