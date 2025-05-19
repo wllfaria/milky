@@ -8,20 +8,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut milky = Milky::new();
     let mut uci = milky_uci::Uci;
 
-    // let parts =
-    //     milky_fen::parse_fen_string("2k1r1nr/pppq1ppp/8/4Q3/3p3b/6N1/PPPP1PPP/R1B2RK1 w - - 6 13")
-    //         .unwrap();
-    // milky.load_position(parts);
-    // let search_command = milky_uci::command::GoCommand {
-    //     white_time: Some(180000),
-    //     white_inc: Some(2000),
-    //     ..Default::default()
-    // };
-    // milky.think(search_command);
-    // println!("{milky}");
-    // println!("score: {}", milky.evaluate());
-    // println!("{}", milky.search_state().best_move());
-
     let stdin = std::io::stdin();
     let mut handle = stdin.lock();
     let mut line = String::new();

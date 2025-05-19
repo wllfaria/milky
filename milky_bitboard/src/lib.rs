@@ -167,18 +167,18 @@ impl Pieces {
 impl std::fmt::Display for Pieces {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Pieces::WhitePawn => write!(f, "♙"),
-            Pieces::WhiteKnight => write!(f, "♘"),
-            Pieces::WhiteBishop => write!(f, "♗"),
-            Pieces::WhiteRook => write!(f, "♖"),
-            Pieces::WhiteQueen => write!(f, "♕"),
-            Pieces::WhiteKing => write!(f, "♔"),
-            Pieces::BlackPawn => write!(f, "♟"),
-            Pieces::BlackKnight => write!(f, "♞"),
-            Pieces::BlackBishop => write!(f, "♝"),
-            Pieces::BlackRook => write!(f, "♜"),
-            Pieces::BlackQueen => write!(f, "♛"),
-            Pieces::BlackKing => write!(f, "♚"),
+            Pieces::WhitePawn => write!(f, "P"),
+            Pieces::WhiteKnight => write!(f, "N"),
+            Pieces::WhiteBishop => write!(f, "B"),
+            Pieces::WhiteRook => write!(f, "R"),
+            Pieces::WhiteQueen => write!(f, "Q"),
+            Pieces::WhiteKing => write!(f, "K"),
+            Pieces::BlackPawn => write!(f, "p"),
+            Pieces::BlackKnight => write!(f, "n"),
+            Pieces::BlackBishop => write!(f, "b"),
+            Pieces::BlackRook => write!(f, "r"),
+            Pieces::BlackQueen => write!(f, "q"),
+            Pieces::BlackKing => write!(f, "k"),
         }
     }
 }
