@@ -1,14 +1,18 @@
 use milky_bitboard::{Move, Pieces, Side};
 
-use crate::board::BoardState;
+use crate::board::{BoardState, get_bishop_attacks, get_queen_attacks};
 use crate::search::SearchState;
-use crate::{BLACK_PASSED_PAWNS_MASKS, FILE_MASKS, ISOLATED_PAWNS_MASKS, WHITE_PASSED_PAWNS_MASKS};
+use crate::{
+    BLACK_PASSED_PAWNS_MASKS, FILE_MASKS, ISOLATED_PAWNS_MASKS, KING_ATTACKS,
+    WHITE_PASSED_PAWNS_MASKS, attacks,
+};
 
 static PASSED_PAWN_BONUS: [i32; 8] = [0, 5, 10, 20, 35, 60, 100, 200];
 static DOUBLE_PAWN_PENALTY: i32 = -10;
 static ISOLATED_PAWN_PENALTY: i32 = -10;
 static SEMI_OPEN_FILE_SCORE: i32 = 10;
 static OPEN_FILE_SCORE: i32 = 15;
+static KING_SAFETY_BONUS: i32 = 5;
 
 #[rustfmt::skip]
 static PIECE_SCORE: [i32; 12] = [
@@ -179,6 +183,17 @@ pub fn evaluate_position(ctx: &mut EvalContext<'_>) -> i32 {
                 }
                 Pieces::WhiteBishop | Pieces::BlackBishop => {
                     score += sign * BISHOP_POS_SCORE[square_idx];
+
+                    // small bonus to bishop mobility based on the amount of squares it control.
+                    let occupancies = ctx.board.occupancies[Side::Both];
+                    let available_squares = get_bishop_attacks(square, occupancies).count_ones();
+                    score += sign * available_squares as i32;
+                }
+                Pieces::WhiteQueen | Pieces::BlackQueen => {
+                    // small bonus to queen mobility based on the amount of squares it control.
+                    let occupancies = ctx.board.occupancies[Side::Both];
+                    let available_squares = get_queen_attacks(square, occupancies).count_ones();
+                    score += sign * available_squares as i32;
                 }
                 Pieces::WhiteRook | Pieces::BlackRook => {
                     score += sign * ROOK_POS_SCORE[square_idx];
@@ -211,12 +226,12 @@ pub fn evaluate_position(ctx: &mut EvalContext<'_>) -> i32 {
                 Pieces::WhiteKing | Pieces::BlackKing => {
                     score += sign * KING_POS_SCORE[square_idx];
 
-                    let pawn_board = match ctx.board.side_to_move {
+                    let pawn_board = match piece.side() {
                         Side::White => ctx.board.pieces[Pieces::WhitePawn],
                         Side::Black => ctx.board.pieces[Pieces::BlackPawn],
                         _ => unreachable!(),
                     };
-                    let enemy_pawn_board = match ctx.board.side_to_move {
+                    let enemy_pawn_board = match piece.side() {
                         Side::White => ctx.board.pieces[Pieces::BlackPawn],
                         Side::Black => ctx.board.pieces[Pieces::WhitePawn],
                         _ => unreachable!(),
@@ -233,8 +248,15 @@ pub fn evaluate_position(ctx: &mut EvalContext<'_>) -> i32 {
                     if mask.is_empty() {
                         score -= sign * OPEN_FILE_SCORE;
                     }
+
+                    let occupancies = match piece.side() {
+                        Side::White => ctx.board.occupancies[Side::White],
+                        Side::Black => ctx.board.occupancies[Side::Black],
+                        _ => unreachable!(),
+                    };
+                    let shield_size = (attacks!(KING_ATTACKS)[square] & occupancies).count_ones();
+                    score += sign * (shield_size as i32 * KING_SAFETY_BONUS);
                 }
-                _ => {}
             };
         }
     }

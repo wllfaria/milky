@@ -156,8 +156,6 @@ impl SearchState {
             start.elapsed().as_millis(),
             self.nodes
         );
-
-        println!("bestmove {}", self.pv_table[0][0]);
     }
 
     fn negamax(
