@@ -23,7 +23,7 @@ static PIECE_SCORE: [i32; 12] = [
    1000,  // white queen score
   10000,  // white king score
    -100,  // black pawn score
-   -300,  // black knight scrore
+   -300,  // black knight score
    -350,  // black bishop score
    -500,  // black rook score
   -1000,  // black queen score

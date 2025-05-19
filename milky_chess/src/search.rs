@@ -191,7 +191,7 @@ impl SearchState {
         self.pv_length[ctx.board.ply] = ctx.board.ply;
 
         if depth == 0 {
-            return self.quiescence(ctx, alpha, beta);
+            return self.quiescence(ctx, alpha, beta, depth);
         }
 
         if ctx.board.ply > MAX_PLY - 1 {
@@ -219,13 +219,6 @@ impl SearchState {
             depth += 1;
         }
 
-        if ctx.time_manager.should_stop(TimeManagerContext {
-            depth,
-            nodes: self.nodes,
-        }) {
-            return 0;
-        }
-
         if depth >= REDUCTION_LIMIT && !in_check && ctx.board.ply != 0 {
             ctx.board.snapshot_board(ctx.zobrist);
 
@@ -245,6 +238,13 @@ impl SearchState {
             ctx.board.ply -= 1;
             ctx.board.repetition_index -= 1;
             ctx.zobrist.position = ctx.board.undo_move();
+
+            if ctx.time_manager.should_stop(TimeManagerContext {
+                depth,
+                nodes: self.nodes,
+            }) {
+                return 0;
+            }
 
             if score >= beta {
                 return beta.0;
@@ -341,6 +341,14 @@ impl SearchState {
             ctx.board.ply -= 1;
             ctx.board.repetition_index -= 1;
             ctx.zobrist.position = ctx.board.undo_move();
+
+            if ctx.time_manager.should_stop(TimeManagerContext {
+                depth,
+                nodes: self.nodes,
+            }) {
+                return 0;
+            }
+
             moves_searched += 1;
 
             // Alpha raise
@@ -420,6 +428,7 @@ impl SearchState {
         ctx: &mut SearchContext<'_>,
         mut alpha: Wrapping<i32>,
         beta: Wrapping<i32>,
+        depth: u8,
     ) -> i32 {
         self.nodes += 1;
 
@@ -473,12 +482,19 @@ impl SearchState {
                 continue;
             }
 
-            let score = -Wrapping(self.quiescence(ctx, -beta, -alpha));
+            let score = -Wrapping(self.quiescence(ctx, -beta, -alpha, depth));
 
             ctx.board.ply -= 1;
             ctx.board.repetition_index -= 1;
 
             ctx.zobrist.position = ctx.board.undo_move();
+
+            if ctx.time_manager.should_stop(TimeManagerContext {
+                depth,
+                nodes: self.nodes,
+            }) {
+                return 0;
+            }
 
             if score > alpha {
                 alpha = score;
