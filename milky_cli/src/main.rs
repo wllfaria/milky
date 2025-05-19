@@ -4,10 +4,14 @@ use milky_chess::Milky;
 use milky_uci::command::{BestMoveCommand, GoCommand, PositionCommand, UciCommand};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    milky_chess::init_attack_tables();
+    milky_chess::init_static_members();
     let mut milky = Milky::new();
-
     let mut uci = milky_uci::Uci;
+
+    // let parts = milky_fen::parse_fen_string("8/8/3P4/8/3p4/8/8/8 w - -").unwrap();
+    // milky.load_position(parts);
+    // println!("{milky}");
+    // println!("score: {}", milky.evaluate());
 
     let stdin = std::io::stdin();
     let mut handle = stdin.lock();

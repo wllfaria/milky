@@ -29,6 +29,9 @@ static ROOK_ATTACKS: OnceLock<Box<[[BitBoard; 4096]]>> = OnceLock::new();
 static BISHOP_BLOCKERS: OnceLock<[BitBoard; 64]> = OnceLock::new();
 static ROOK_BLOCKERS: OnceLock<[BitBoard; 64]> = OnceLock::new();
 
+static WHITE_PASSED_PAWNS_MASKS: OnceLock<[BitBoard; 64]> = OnceLock::new();
+static BLACK_PASSED_PAWNS_MASKS: OnceLock<[BitBoard; 64]> = OnceLock::new();
+
 #[macro_export]
 macro_rules! attacks {
     ($attacks:ident) => {{ $attacks.get().unwrap() }};
@@ -46,143 +49,37 @@ static EMPTY_GH_FILE: BitBoard = BitBoard::new(0x3F3F3F3F3F3F3F3F);
 /// Every bit is set except for the bits on the AB files
 static EMPTY_AB_FILE: BitBoard = BitBoard::new(0xFCFCFCFCFCFCFCFC);
 
-/// ┌────────────────┬─────────────┬────────┬─────────────────────────────────────────────────────────┐
-/// │ Castling right │ Move square │ Result │ Description                                             │
-/// ├────────────────┼─────────────┼────────┼─────────────────────────────────────────────────────────┤
-/// │ 1111 (kqQK)    │ 1111 (15)   │ 1111   │ Neither rook or king moved, castling is unchanged       │
-/// ├────────────────┼─────────────┼────────┼─────────────────────────────────────────────────────────┤
-/// │ 1111 (qkQK)    │ 1100 (12)   │ 1100   │ White king moved, white can no longer castle            │
-/// ├────────────────┼─────────────┼────────┼─────────────────────────────────────────────────────────┤
-/// │ 1111 (qkQK)    │ 1110 (14)   │ 1110   │ White king's rook moved, white can't castle king side   │
-/// ├────────────────┼─────────────┼────────┼─────────────────────────────────────────────────────────┤
-/// │ 1111 (qkQK)    │ 1101 (13)   │ 1101   │ White queen's rook moved, white can't castle queen side │
-/// ├────────────────┼─────────────┼────────┼─────────────────────────────────────────────────────────┤
-/// │ 1111 (qkQK)    │ 0011 ( 3)   │ 0011   │ Black king moved, black can no longer castle            │
-/// ├────────────────┼─────────────┼────────┼─────────────────────────────────────────────────────────┤
-/// │ 1111 (qkQK)    │ 1011 (11)   │ 1011   │ Black king's rook moved, black can't castle king side   │
-/// ├────────────────┼─────────────┼────────┼─────────────────────────────────────────────────────────┤
-/// │ 1111 (qkQK)    │ 0111 ( 7)   │ 0111   │ Black queen's rook moved, black can't castle queen side │
-/// └────────────────┴─────────────┴────────┴─────────────────────────────────────────────────────────┘
-#[rustfmt::skip]
-static CASTLING_RIGHTS: [u8; 64] = [
-     7, 15, 15, 15,  3, 15, 15, 11,
-    15, 15, 15, 15, 15, 15, 15, 15,
-    15, 15, 15, 15, 15, 15, 15, 15,
-    15, 15, 15, 15, 15, 15, 15, 15,
-    15, 15, 15, 15, 15, 15, 15, 15,
-    15, 15, 15, 15, 15, 15, 15, 15,
-    15, 15, 15, 15, 15, 15, 15, 15,
-    13, 15, 15, 15, 12, 15, 15, 14,
+pub static FILE_MASKS: [BitBoard; 8] = [
+    BitBoard::new(0x0101010101010101),
+    BitBoard::new(0x0202020202020202),
+    BitBoard::new(0x0404040404040404),
+    BitBoard::new(0x0808080808080808),
+    BitBoard::new(0x1010101010101010),
+    BitBoard::new(0x2020202020202020),
+    BitBoard::new(0x4040404040404040),
+    BitBoard::new(0x8080808080808080),
 ];
 
-#[rustfmt::skip]
-pub static PIECE_SCORE: [i32; 12] = [
-    100,  // white pawn score
-    300,  // white knight scrore
-    350,  // white bishop score
-    500,  // white rook score
-   1000,  // white queen score
-  10000,  // white king score
-   -100,  // black pawn score
-   -300,  // black knight scrore
-   -350,  // black bishop score
-   -500,  // black rook score
-  -1000,  // black queen score
- -10000,  // black king score
+pub static RANK_MASKS: [BitBoard; 8] = [
+    BitBoard::new(0x00000000000000FF),
+    BitBoard::new(0x000000000000FF00),
+    BitBoard::new(0x0000000000FF0000),
+    BitBoard::new(0x00000000FF000000),
+    BitBoard::new(0x000000FF00000000),
+    BitBoard::new(0x0000FF0000000000),
+    BitBoard::new(0x00FF000000000000),
+    BitBoard::new(0xFF00000000000000),
 ];
 
-/// # Most Valuable Victim / Less Valuable Attacker table
-///
-/// This table is used to apply a bonus to captures based on the values of the pieces. Getting a
-/// better beta cuttof on alpha-beta-search.
-///
-/// # Ordering is:
-///
-/// .  P   N   B   R   Q   K
-/// P 105 205 305 405 505 605
-/// N 104 204 304 404 504 604
-/// B 103 203 303 403 503 603
-/// R 102 202 302 402 502 602
-/// Q 101 201 301 401 501 601
-/// K 100 200 300 400 500 600
-///
-/// The table contains twice the size above to enable indexing with `Pieces`.
-///
-#[rustfmt::skip]
-static MVV_LVA: [[i32; 12]; 12] = [
-    [105, 205, 305, 405, 505, 605,  105, 205, 305, 405, 505, 605],
-    [104, 204, 304, 404, 504, 604,  104, 204, 304, 404, 504, 604],
-    [103, 203, 303, 403, 503, 603,  103, 203, 303, 403, 503, 603],
-    [102, 202, 302, 402, 502, 602,  102, 202, 302, 402, 502, 602],
-    [101, 201, 301, 401, 501, 601,  101, 201, 301, 401, 501, 601],
-    [100, 200, 300, 400, 500, 600,  100, 200, 300, 400, 500, 600],
-
-    [105, 205, 305, 405, 505, 605,  105, 205, 305, 405, 505, 605],
-    [104, 204, 304, 404, 504, 604,  104, 204, 304, 404, 504, 604],
-    [103, 203, 303, 403, 503, 603,  103, 203, 303, 403, 503, 603],
-    [102, 202, 302, 402, 502, 602,  102, 202, 302, 402, 502, 602],
-    [101, 201, 301, 401, 501, 601,  101, 201, 301, 401, 501, 601],
-    [100, 200, 300, 400, 500, 600,  100, 200, 300, 400, 500, 600],
-];
-
-#[rustfmt::skip]
-pub static PAWN_POS_SCORE: [i32; 64] = [
-    90,  90,  90,  90,  90,  90,  90,  90,
-    30,  30,  30,  40,  40,  30,  30,  30,
-    20,  20,  20,  30,  30,  30,  20,  20,
-    10,  10,  10,  20,  20,  10,  10,  10,
-     5,   5,  10,  20,  20,   5,   5,   5,
-     0,   0,   0,   5,   5,   0,   0,   0,
-     0,   0,   0, -10, -10,   0,   0,   0,
-     0,   0,   0,   0,   0,   0,   0,   0,
-];
-
-#[rustfmt::skip]
-pub static KNIGHT_POS_SCORE: [i32; 64] = [
-    -5,   0,   0,   0,   0,   0,   0,  -5,
-    -5,   0,   0,  10,  10,   0,   0,  -5,
-    -5,   5,  20,  20,  20,  20,   5,  -5,
-    -5,  10,  20,  30,  30,  20,  10,  -5,
-    -5,  10,  20,  30,  30,  20,  10,  -5,
-    -5,   5,  20,  10,  10,  20,   5,  -5,
-    -5,   0,   0,   0,   0,   0,   0,  -5,
-    -5, -10,   0,   0,   0,   0, -10,  -5,
-];
-
-#[rustfmt::skip]
-pub static BISHOP_POS_SCORE: [i32; 64] = [
-     0,   0,   0,   0,   0,   0,   0,   0,
-     0,   0,   0,   0,   0,   0,   0,   0,
-     0,   0,   0,  10,  10,   0,   0,   0,
-     0,   0,  10,  20,  20,  10,   0,   0,
-     0,   0,  10,  20,  20,  10,   0,   0,
-     0,  10,   0,   0,   0,   0,  10,   0,
-     0,  30,   0,   0,   0,   0,  30,   0,
-     0,   0, -10,   0,   0, -10,   0,   0,
-];
-
-#[rustfmt::skip]
-pub static ROOK_POS_SCORE: [i32; 64] = [
-    50,  50,  50,  50,  50,  50,  50,  50,
-    50,  50,  50,  50,  50,  50,  50,  50,
-     0,   0,  10,  20,  20,  10,   0,   0,
-     0,   0,  10,  20,  20,  10,   0,   0,
-     0,   0,  10,  20,  20,  10,   0,   0,
-     0,   0,  10,  20,  20,  10,   0,   0,
-     0,   0,  10,  20,  20,  10,   0,   0,
-     0,   0,   0,  20,  20,   0,   0,   0,
-];
-
-#[rustfmt::skip]
-pub static KING_POS_SCORE: [i32; 64] = [
-     0,   0,   0,   0,   0,   0,   0,   0,
-     0,   0,   5,   5,   5,   5,   0,   0,
-     0,   5,   5,  10,  10,   5,   5,   0,
-     0,   5,  10,  20,  20,  10,   5,   0,
-     0,   5,  10,  20,  20,  10,   5,   0,
-     0,   0,   5,  10,  10,   5,   0,   0,
-     0,   5,   5,  -5,  -5,   0,   5,   0,
-     0,   0,   5,   0, -15,   0,  10,   0,
+static ISOLATED_PAWNS_MASKS: [BitBoard; 8] = [
+    BitBoard::new(0x0202020202020202),
+    BitBoard::new(0x0505050505050505),
+    BitBoard::new(0x0A0A0A0A0A0A0A0A),
+    BitBoard::new(0x1414141414141414),
+    BitBoard::new(0x2828282828282828),
+    BitBoard::new(0x5050505050505050),
+    BitBoard::new(0xA0A0A0A0A0A0A0A0),
+    BitBoard::new(0x4040404040404040),
 ];
 
 #[rustfmt::skip]
@@ -350,7 +247,46 @@ enum SliderPieceKind {
     Bishop,
 }
 
-pub fn init_attack_tables() {
+pub fn init_static_members() {
+    init_attack_tables();
+    init_pawn_masks(Side::White);
+    init_pawn_masks(Side::Black);
+}
+
+fn init_pawn_masks(side: Side) {
+    let mut masks = [BitBoard::default(); 64];
+
+    (0..64).for_each(|i| {
+        let square = Square::from_u64_unchecked(i as u64);
+
+        masks[i] |= ISOLATED_PAWNS_MASKS[square.file() as usize];
+        masks[i] |= FILE_MASKS[square.file() as usize];
+
+        for rank in 0..8 {
+            match side {
+                Side::White => {
+                    if rank <= square.rank() as usize {
+                        masks[i] &= !RANK_MASKS[7 - rank];
+                    }
+                }
+                Side::Black => {
+                    if rank >= square.rank() as usize {
+                        masks[i] &= !RANK_MASKS[7 - rank];
+                    }
+                }
+                _ => unreachable!(),
+            }
+        }
+    });
+
+    match side {
+        Side::White => WHITE_PASSED_PAWNS_MASKS.get_or_init(|| masks),
+        Side::Black => BLACK_PASSED_PAWNS_MASKS.get_or_init(|| masks),
+        _ => unreachable!(),
+    };
+}
+
+fn init_attack_tables() {
     init_leaper_piece_attacks();
     init_slider_piece_attacks(SliderPieceKind::Bishop);
     init_slider_piece_attacks(SliderPieceKind::Rook);

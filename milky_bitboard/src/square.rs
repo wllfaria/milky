@@ -75,78 +75,36 @@ impl Square {
         }
     }
 
+    pub fn is_available(&self) -> bool {
+        *self != Square::OffBoard
+    }
+
     pub fn file(&self) -> File {
-        match self {
-            Square::A8
-            | Square::A7
-            | Square::A6
-            | Square::A5
-            | Square::A4
-            | Square::A3
-            | Square::A2
-            | Square::A1 => File::A,
-            Square::B8
-            | Square::B7
-            | Square::B6
-            | Square::B5
-            | Square::B4
-            | Square::B3
-            | Square::B2
-            | Square::B1 => File::B,
-            Square::C8
-            | Square::C7
-            | Square::C6
-            | Square::C5
-            | Square::C4
-            | Square::C3
-            | Square::C2
-            | Square::C1 => File::C,
-            Square::D8
-            | Square::D7
-            | Square::D6
-            | Square::D5
-            | Square::D4
-            | Square::D3
-            | Square::D2
-            | Square::D1 => File::D,
-            Square::E8
-            | Square::E7
-            | Square::E6
-            | Square::E5
-            | Square::E4
-            | Square::E3
-            | Square::E2
-            | Square::E1 => File::E,
-            Square::F8
-            | Square::F7
-            | Square::F6
-            | Square::F5
-            | Square::F4
-            | Square::F3
-            | Square::F2
-            | Square::F1 => File::F,
-            Square::G8
-            | Square::G7
-            | Square::G6
-            | Square::G5
-            | Square::G4
-            | Square::G3
-            | Square::G2
-            | Square::G1 => File::G,
-            Square::H8
-            | Square::H7
-            | Square::H6
-            | Square::H5
-            | Square::H4
-            | Square::H3
-            | Square::H2
-            | Square::H1 => File::H,
+        match *self as usize % 8 {
+            0 => File::A,
+            1 => File::B,
+            2 => File::C,
+            3 => File::D,
+            4 => File::E,
+            5 => File::F,
+            6 => File::G,
+            7 => File::H,
             _ => unreachable!(),
         }
     }
 
-    pub fn is_available(&self) -> bool {
-        *self != Square::OffBoard
+    pub fn rank(&self) -> Rank {
+        match 7 - (*self as usize / 8) {
+            0 => Rank::First,
+            1 => Rank::Second,
+            2 => Rank::Third,
+            3 => Rank::Fourth,
+            4 => Rank::Fifth,
+            5 => Rank::Sixth,
+            6 => Rank::Seventh,
+            7 => Rank::Eighth,
+            _ => unreachable!(),
+        }
     }
 
     pub fn from_algebraic_str(str: &str) -> Result<Square> {

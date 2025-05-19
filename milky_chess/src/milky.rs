@@ -32,6 +32,13 @@ impl Milky {
         }
     }
 
+    pub fn evaluate(&mut self) -> i32 {
+        crate::evaluate::evaluate_position(&mut crate::evaluate::EvalContext {
+            board: &self.board_state,
+            search: &mut self.search_state,
+        })
+    }
+
     pub fn board_state(&self) -> &BoardState {
         &self.board_state
     }

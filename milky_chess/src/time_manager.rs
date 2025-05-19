@@ -77,7 +77,6 @@ impl TimeManager {
             }) => {
                 let mut time_per_move = *time_left / moves_to_go.unwrap_or(40);
                 time_per_move += *increment * 3 / 4;
-                println!("time_per_move: {:?}", time_per_move.as_millis());
                 let safety_margin = Duration::from_millis(50);
                 let stop_time = start_time + time_per_move - safety_margin;
                 self.stop_time = Some(stop_time);

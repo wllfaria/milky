@@ -6,7 +6,36 @@ use crate::board::{get_bishop_attacks, get_queen_attacks, get_rook_attacks};
 use crate::evaluate::{EvalContext, score_move};
 use crate::search::SearchState;
 use crate::zobrist::Zobrist;
-use crate::{BoardState, CASTLING_RIGHTS, KING_ATTACKS, KNIGHT_ATTACKS, PAWN_ATTACKS, attacks};
+use crate::{BoardState, KING_ATTACKS, KNIGHT_ATTACKS, PAWN_ATTACKS, attacks};
+
+/// ┌────────────────┬─────────────┬────────┬─────────────────────────────────────────────────────────┐
+/// │ Castling right │ Move square │ Result │ Description                                             │
+/// ├────────────────┼─────────────┼────────┼─────────────────────────────────────────────────────────┤
+/// │ 1111 (kqQK)    │ 1111 (15)   │ 1111   │ Neither rook or king moved, castling is unchanged       │
+/// ├────────────────┼─────────────┼────────┼─────────────────────────────────────────────────────────┤
+/// │ 1111 (qkQK)    │ 1100 (12)   │ 1100   │ White king moved, white can no longer castle            │
+/// ├────────────────┼─────────────┼────────┼─────────────────────────────────────────────────────────┤
+/// │ 1111 (qkQK)    │ 1110 (14)   │ 1110   │ White king's rook moved, white can't castle king side   │
+/// ├────────────────┼─────────────┼────────┼─────────────────────────────────────────────────────────┤
+/// │ 1111 (qkQK)    │ 1101 (13)   │ 1101   │ White queen's rook moved, white can't castle queen side │
+/// ├────────────────┼─────────────┼────────┼─────────────────────────────────────────────────────────┤
+/// │ 1111 (qkQK)    │ 0011 ( 3)   │ 0011   │ Black king moved, black can no longer castle            │
+/// ├────────────────┼─────────────┼────────┼─────────────────────────────────────────────────────────┤
+/// │ 1111 (qkQK)    │ 1011 (11)   │ 1011   │ Black king's rook moved, black can't castle king side   │
+/// ├────────────────┼─────────────┼────────┼─────────────────────────────────────────────────────────┤
+/// │ 1111 (qkQK)    │ 0111 ( 7)   │ 0111   │ Black queen's rook moved, black can't castle queen side │
+/// └────────────────┴─────────────┴────────┴─────────────────────────────────────────────────────────┘
+#[rustfmt::skip]
+static CASTLING_RIGHTS: [u8; 64] = [
+     7, 15, 15, 15,  3, 15, 15, 11,
+    15, 15, 15, 15, 15, 15, 15, 15,
+    15, 15, 15, 15, 15, 15, 15, 15,
+    15, 15, 15, 15, 15, 15, 15, 15,
+    15, 15, 15, 15, 15, 15, 15, 15,
+    15, 15, 15, 15, 15, 15, 15, 15,
+    15, 15, 15, 15, 15, 15, 15, 15,
+    13, 15, 15, 15, 12, 15, 15, 14,
+];
 
 pub trait Movable {
     fn source(&self) -> Square;
