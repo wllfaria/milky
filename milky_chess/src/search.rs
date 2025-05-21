@@ -104,8 +104,6 @@ impl SearchState {
 
         let mut curr_depth = 1;
 
-        let start = std::time::Instant::now();
-
         while !ctx.time_manager.should_stop(TimeManagerContext {
             depth: curr_depth,
             nodes: self.nodes,
@@ -123,39 +121,35 @@ impl SearchState {
             alpha = Wrapping(score - ASPIRATION_WINDOW);
             beta = Wrapping(score + ASPIRATION_WINDOW);
 
-            if score > -MATE_UPPER_BOUND && score < -MATE_LOWER_BOUND {
-                print!(
-                    "info score mate {} depth {curr_depth} nodes {} pv ",
-                    -(score + MATE_UPPER_BOUND) / 2 - 1,
-                    self.nodes,
-                )
-            } else if score > MATE_LOWER_BOUND && score < MATE_UPPER_BOUND {
-                print!(
-                    "info score mate {} depth {curr_depth} nodes {} pv ",
-                    (MATE_UPPER_BOUND - score) / 2 + 1,
-                    self.nodes,
-                )
-            } else {
-                print!(
-                    "info score cp {score} depth {curr_depth} nodes {} pv ",
-                    self.nodes
-                );
-            }
+            if self.pv_length[0] > 0 {
+                if score > -MATE_UPPER_BOUND && score < -MATE_LOWER_BOUND {
+                    print!(
+                        "info score mate {} depth {curr_depth} nodes {} pv ",
+                        -(score + MATE_UPPER_BOUND) / 2 - 1,
+                        self.nodes,
+                    )
+                } else if score > MATE_LOWER_BOUND && score < MATE_UPPER_BOUND {
+                    print!(
+                        "info score mate {} depth {curr_depth} nodes {} pv ",
+                        (MATE_UPPER_BOUND - score) / 2 + 1,
+                        self.nodes,
+                    )
+                } else {
+                    print!(
+                        "info score cp {score} depth {curr_depth} nodes {} pv ",
+                        self.nodes
+                    );
+                }
 
-            for idx in 0..self.pv_length[0] {
-                print!("{} ", self.pv_table[0][idx]);
-            }
+                for idx in 0..self.pv_length[0] {
+                    print!("{} ", self.pv_table[0][idx]);
+                }
 
-            println!();
+                println!();
+            }
 
             curr_depth += 1;
         }
-
-        println!(
-            "took: {:?} nodes: {}",
-            start.elapsed().as_millis(),
-            self.nodes
-        );
     }
 
     fn negamax(
@@ -168,13 +162,14 @@ impl SearchState {
         const FULL_DEPTH_MOVES: i32 = 4;
         const REDUCTION_LIMIT: u8 = 3;
 
-        let mut tt_flag = TTFlag::Alpha;
+        self.pv_length[ctx.board.ply] = ctx.board.ply;
 
-        if ctx.board.ply != 0 && is_repetition(ctx) {
+        if (ctx.board.ply != 0 && is_repetition(ctx)) || ctx.board.fifty_move_counter >= 100 {
             return 0;
         }
 
         let pv_node = beta.0 - alpha.0 > 1;
+        let mut tt_flag = TTFlag::Alpha;
 
         let score = ctx.transposition_table.get(
             ctx.zobrist.position,
@@ -187,8 +182,6 @@ impl SearchState {
         if let (Some(score), true, true) = (score, ctx.board.ply != 0, !pv_node) {
             return score;
         }
-
-        self.pv_length[ctx.board.ply] = ctx.board.ply;
 
         if depth == 0 {
             return self.quiescence(ctx, alpha, beta, depth);
@@ -219,6 +212,22 @@ impl SearchState {
             depth += 1;
         }
 
+        let static_eval = evaluate_position(&mut EvalContext {
+            board: ctx.board,
+            search: self,
+        });
+
+        if depth < REDUCTION_LIMIT
+            && !pv_node
+            && !in_check
+            && i32::abs(beta.0 - 1) > -INFINITY + 100
+        {
+            let eval_margin = 120 * depth as i32;
+            if static_eval - eval_margin >= beta.0 {
+                return static_eval - eval_margin;
+            }
+        }
+
         if depth >= REDUCTION_LIMIT && !in_check && ctx.board.ply != 0 {
             ctx.board.snapshot_board(ctx.zobrist);
 
@@ -231,7 +240,6 @@ impl SearchState {
 
             ctx.board.en_passant = Square::OffBoard;
             ctx.board.side_to_move = ctx.board.side_to_move.enemy();
-
             ctx.zobrist.position ^= ctx.zobrist.side_key;
 
             let score = -Wrapping(self.negamax(ctx, -beta, -beta + Wrapping(1), depth - 1 - 2));
@@ -432,17 +440,14 @@ impl SearchState {
     ) -> i32 {
         self.nodes += 1;
 
-        if ctx.board.ply > MAX_PLY - 1 {
-            return evaluate_position(&mut EvalContext {
-                board: ctx.board,
-                search: self,
-            });
-        }
-
         let evaluation = evaluate_position(&mut EvalContext {
             board: ctx.board,
             search: self,
         });
+
+        if ctx.board.ply > MAX_PLY - 1 {
+            return evaluation;
+        }
 
         if evaluation >= beta.0 {
             return beta.0;
@@ -468,7 +473,7 @@ impl SearchState {
             ctx.board.ply += 1;
             ctx.board.record_repetition(ctx.zobrist);
 
-            if !make_move(
+            let legal_move = make_move(
                 &mut MoveContext {
                     search: self,
                     board: ctx.board,
@@ -476,7 +481,9 @@ impl SearchState {
                 },
                 piece_move,
                 MoveKind::Captures,
-            ) {
+            );
+
+            if !legal_move {
                 ctx.board.ply -= 1;
                 ctx.board.repetition_index -= 1;
                 continue;
@@ -486,7 +493,6 @@ impl SearchState {
 
             ctx.board.ply -= 1;
             ctx.board.repetition_index -= 1;
-
             ctx.zobrist.position = ctx.board.undo_move();
 
             if ctx.time_manager.should_stop(TimeManagerContext {

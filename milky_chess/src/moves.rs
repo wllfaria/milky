@@ -1,5 +1,6 @@
 use milky_bitboard::{
-    BitBoard, CastlingRights, Move, MoveFlags, Pieces, PromotionPieces, Rank, Side, Square,
+    BitBoard, CastlingRights, Move, MoveFlags, PieceKind, Pieces, PromotionPieces, Rank, Side,
+    Square,
 };
 
 use crate::board::{get_bishop_attacks, get_queen_attacks, get_rook_attacks};
@@ -75,7 +76,15 @@ pub(crate) fn make_move(ctx: &mut MoveContext<'_>, piece_move: Move, move_kind: 
             ctx.zobrist.position ^= ctx.zobrist.pieces_table[piece][source];
             ctx.zobrist.position ^= ctx.zobrist.pieces_table[piece][target];
 
+            ctx.board.fifty_move_counter += 1;
+
+            if piece.kind() == PieceKind::Pawn {
+                ctx.board.fifty_move_counter = 0;
+            }
+
             if piece_move.is_capture() {
+                ctx.board.fifty_move_counter = 0;
+
                 let (start, end) = match ctx.board.side_to_move {
                     Side::White => (Pieces::BlackPawn as usize, Pieces::BlackKing as usize),
                     Side::Black => (Pieces::WhitePawn as usize, Pieces::WhiteKing as usize),

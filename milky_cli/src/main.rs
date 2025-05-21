@@ -8,6 +8,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut milky = Milky::new();
     let mut uci = milky_uci::Uci;
 
+    // let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - ";
+    // let fen = "r3k2r/p1ppqpb1/1n2pnp1/3PN3/1p2P3/2N2Q1p/PPPB1PPP/R3K2R w KQkq - 0 1 ";
+    // let fen = milky_fen::parse_fen_string(fen).unwrap();
+    // milky.load_position(fen);
+    // println!("{milky}");
+    // println!("{}", milky.evaluate());
+
     let stdin = std::io::stdin();
     let mut handle = stdin.lock();
     let mut line = String::new();
@@ -49,8 +56,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             UciCommand::Info(_) => unreachable!(),
             UciCommand::Option(_) => unreachable!(),
         }
-
-        println!("{milky}");
     }
 
     Ok(())

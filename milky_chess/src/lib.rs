@@ -13,6 +13,7 @@ mod zobrist;
 use std::sync::OnceLock;
 
 use board::BoardState;
+use evaluate::{ENDGAME_SCORE, OPENING_SCORE_THRESHOLD};
 pub use milky::Milky;
 use milky_bitboard::{BitBoard, Side, Square};
 use moves::{Movable, MoveContext, generate_moves, make_move};
@@ -240,6 +241,25 @@ static ROOK_MAGIC_BITBOARDS: [BitBoard; 64] = [
     BitBoard::new(0x2006104900A0804),
     BitBoard::new(0x1004081002402),
 ];
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+enum GamePhase {
+    Opening,
+    Endgame,
+    Midgame,
+}
+
+impl GamePhase {
+    pub fn from_score(score: i32) -> Self {
+        if score > OPENING_SCORE_THRESHOLD {
+            Self::Opening
+        } else if score < ENDGAME_SCORE {
+            Self::Endgame
+        } else {
+            Self::Midgame
+        }
+    }
+}
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 enum SliderPieceKind {

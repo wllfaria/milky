@@ -2,9 +2,6 @@ use crate::search::MATE_LOWER_BOUND;
 use crate::zobrist::ZobristKey;
 
 static ONE_MB: usize = 0x100000;
-static TT_SIZE_MB: usize = 4;
-static TT_SIZE_BYTES: usize = ONE_MB * TT_SIZE_MB;
-static TT_ENTRY_COUNT: usize = TT_SIZE_BYTES / std::mem::size_of::<TTEntry>();
 
 #[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 #[repr(u8)]
@@ -30,19 +27,22 @@ pub struct TranspositionTable {
 
 impl Default for TranspositionTable {
     fn default() -> Self {
-        Self::new()
+        Self::new(64)
     }
 }
 
 impl TranspositionTable {
-    pub fn new() -> Self {
+    pub fn new(size: usize) -> Self {
+        let tt_size_bytes: usize = ONE_MB * size;
+        let tt_entry_count = tt_size_bytes / std::mem::size_of::<TTEntry>();
+
         Self {
-            entries: vec![TTEntry::default(); TT_ENTRY_COUNT],
+            entries: vec![TTEntry::default(); tt_entry_count],
         }
     }
 
     fn index(&self, key: ZobristKey) -> usize {
-        key.inner() as usize % TT_ENTRY_COUNT
+        key.inner() as usize % self.entries.len()
     }
 
     pub fn clear(&mut self) {

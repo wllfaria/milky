@@ -76,6 +76,30 @@ impl Iterator for PiecesIter {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum PieceKind {
+    Pawn,
+    Knight,
+    Bishop,
+    Rook,
+    Queen,
+    King,
+}
+
+impl std::ops::Index<PieceKind> for [[i32; 12]; 6] {
+    type Output = [i32; 12];
+
+    fn index(&self, index: PieceKind) -> &Self::Output {
+        &self[index as usize]
+    }
+}
+
+impl std::ops::IndexMut<PieceKind> for [[i32; 12]; 6] {
+    fn index_mut(&mut self, index: PieceKind) -> &mut Self::Output {
+        &mut self[index as usize]
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Pieces {
     WhitePawn,
     WhiteKnight,
@@ -102,6 +126,17 @@ impl Pieces {
 
     pub fn range() -> std::ops::Range<usize> {
         0..12
+    }
+
+    pub fn kind(&self) -> PieceKind {
+        match self {
+            Pieces::WhitePawn | Pieces::BlackPawn => PieceKind::Pawn,
+            Pieces::WhiteKnight | Pieces::BlackKnight => PieceKind::Knight,
+            Pieces::WhiteBishop | Pieces::BlackBishop => PieceKind::Bishop,
+            Pieces::WhiteRook | Pieces::BlackRook => PieceKind::Rook,
+            Pieces::WhiteQueen | Pieces::BlackQueen => PieceKind::Queen,
+            Pieces::WhiteKing | Pieces::BlackKing => PieceKind::King,
+        }
     }
 
     pub fn side(&self) -> Side {

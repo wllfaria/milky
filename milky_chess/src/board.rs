@@ -41,6 +41,7 @@ pub struct BoardSnapshot {
     pub en_passant: Square,
     pub castling_rights: CastlingRights,
     pub position_key: ZobristKey,
+    pub fifty_move_counter: u8,
 }
 
 impl Default for BoardSnapshot {
@@ -52,6 +53,7 @@ impl Default for BoardSnapshot {
             en_passant: Square::OffBoard,
             castling_rights: CastlingRights::all(),
             position_key: ZobristKey::default(),
+            fifty_move_counter: 0,
         }
     }
 }
@@ -63,6 +65,7 @@ pub struct BoardState {
     pub en_passant: Square,
     pub castling_rights: CastlingRights,
     pub snapshots: Vec<BoardSnapshot>,
+    pub fifty_move_counter: u8,
     pub ply: usize,
     pub repetition_table: [ZobristKey; MAX_REPETITIONS],
     pub repetition_index: usize,
@@ -86,6 +89,7 @@ impl BoardState {
             ply: 0,
             repetition_table: [ZobristKey::default(); MAX_REPETITIONS],
             repetition_index: 0,
+            fifty_move_counter: 0,
         }
     }
 
@@ -97,6 +101,7 @@ impl BoardState {
             en_passant: self.en_passant,
             castling_rights: self.castling_rights,
             position_key: zobrist.position,
+            fifty_move_counter: self.fifty_move_counter,
         });
     }
 
@@ -110,6 +115,7 @@ impl BoardState {
         self.side_to_move = snapshot.side_to_move;
         self.en_passant = snapshot.en_passant;
         self.castling_rights = snapshot.castling_rights;
+        self.fifty_move_counter = snapshot.fifty_move_counter;
         snapshot.position_key
     }
 
