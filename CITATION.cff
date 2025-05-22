@@ -1,0 +1,21 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: Milky
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - name: wiru
+    email: hello@wiru.st
+repository-code: 'https://github.com/wllfaria/milky'
+repository-artifact: 'https://github.com/wllfaria/milky/releases'
+abstract: Milky is a free UCI chess engine.
+keywords:
+  - chess
+  - chess engine
+  - rust
+  - alpha-beta search
+license: MIT

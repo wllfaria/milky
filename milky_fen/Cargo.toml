@@ -2,6 +2,7 @@
 name = "milky_fen"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 milky_bitboard.workspace = true

@@ -11,6 +11,7 @@ members = [
 [workspace.package]
 edition = "2024"
 version = "0.1.0"
+rust-version = "1.85.1"
 
 [workspace.dependencies]
 milky_chess = { path = "milky_chess" }
