@@ -9,4 +9,5 @@ milky_bitboard.workspace = true
 
 thiserror.workspace = true
 
+[dev-dependencies]
 insta = "1.43.1"
