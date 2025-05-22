@@ -40,7 +40,7 @@ pub enum UciCommand {
     /// engine.
     ///
     /// One string will be sent for each parameter and this will only be sent when the engine is
-    /// waiting. The name and value of the option in id should not be case sensitive and can inlude
+    /// waiting. The name and value of the option in id should not be case sensitive and can include
     /// spaces.
     SetOption(SetOptionCommand),
     /// This is the command to try to register an engine or to tell the engine that registration
@@ -294,9 +294,9 @@ pub struct GoCommand {
     pub search_moves: Option<Vec<PartialMove>>,
     /// Engine is to ponder during opponent's time.
     pub ponder: bool,
-    /// Remaning time for white (in ms).
+    /// Remaining time for white (in ms).
     pub white_time: Option<u64>,
-    /// Remaning time for black (in ms).
+    /// Remaining time for black (in ms).
     pub black_time: Option<u64>,
     /// White increment per move (in ms).
     pub white_inc: Option<u64>,
