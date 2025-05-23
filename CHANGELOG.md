@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.0] - 2025-05-23
+
+### Features
+
+- Null move pruning and using best move on ordering
+
+### Miscellaneous Tasks
+
+- Updating justfile with better release workflow
+- Making insta a dev-dependency
+- Adding testing files to gitignore
+
 ## [0.1.0] - 2025-05-22
 
 ### Bug Fixes
