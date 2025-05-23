@@ -56,6 +56,13 @@ pub struct MoveContext<'ctx> {
     pub board: &'ctx mut BoardState,
 }
 
+pub struct SortContext<'ctx> {
+    pub zobrist: &'ctx mut Zobrist,
+    pub search: &'ctx mut SearchState,
+    pub board: &'ctx mut BoardState,
+    pub best_move: Move,
+}
+
 #[cfg(feature = "bench")]
 pub fn make_move_bench(ctx: &mut MoveContext<'_>, piece_move: Move, move_kind: MoveKind) -> bool {
     make_move(ctx, piece_move, move_kind)
@@ -234,7 +241,7 @@ pub(crate) fn make_move(ctx: &mut MoveContext<'_>, piece_move: Move, move_kind: 
     }
 }
 
-pub(crate) fn sort_moves(ctx: &mut MoveContext<'_>) {
+pub(crate) fn sort_moves(ctx: &mut SortContext<'_>) {
     let mut scored_moves = vec![];
 
     for m in ctx.search.moves.into_iter().take(ctx.search.move_count) {
@@ -242,7 +249,8 @@ pub(crate) fn sort_moves(ctx: &mut MoveContext<'_>) {
             board: ctx.board,
             search: ctx.search,
         };
-        scored_moves.push((score_move(&mut eval_context, m), m));
+        let score = if ctx.best_move == m { 30_000 } else { score_move(&mut eval_context, m) };
+        scored_moves.push((score, m));
     }
 
     scored_moves.sort_by_key(|&(score, _)| std::cmp::Reverse(score));

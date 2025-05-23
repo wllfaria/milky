@@ -1,3 +1,5 @@
+use milky_bitboard::Move;
+
 use crate::search::MATE_LOWER_BOUND;
 use crate::zobrist::ZobristKey;
 
@@ -18,6 +20,7 @@ pub struct TTEntry {
     pub score: i32,
     pub depth: u8,
     pub flag: TTFlag,
+    pub best_move: Move,
 }
 
 #[derive(Debug)]
@@ -56,6 +59,7 @@ impl TranspositionTable {
         beta: i32,
         depth: u8,
         ply: usize,
+        best_move: &mut Move,
     ) -> Option<i32> {
         let entry = self.entries[self.index(key)];
 
@@ -79,11 +83,22 @@ impl TranspositionTable {
             TTFlag::Exact => Some(score),
             TTFlag::Alpha if score <= alpha => Some(alpha),
             TTFlag::Beta if score >= beta => Some(beta),
-            _ => None,
+            _ => {
+                *best_move = entry.best_move;
+                None
+            }
         }
     }
 
-    pub fn set(&mut self, key: ZobristKey, depth: u8, mut score: i32, flag: TTFlag, ply: usize) {
+    pub fn set(
+        &mut self,
+        best_move: Move,
+        key: ZobristKey,
+        mut score: i32,
+        flag: TTFlag,
+        depth: u8,
+        ply: usize,
+    ) {
         let index = self.index(key);
 
         if score < -MATE_LOWER_BOUND {
@@ -99,6 +114,7 @@ impl TranspositionTable {
             depth,
             score,
             flag,
+            best_move,
         };
     }
 }

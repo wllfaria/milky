@@ -129,6 +129,6 @@ fn perft_italian_game(b: divan::Bencher, depth: u8) {
 }
 
 fn main() {
-    milky_chess::init_attack_tables();
+    milky_chess::init_static_members();
     divan::main();
 }

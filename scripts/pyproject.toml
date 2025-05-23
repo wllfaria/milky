@@ -1,0 +1,9 @@
+[project]
+name = "milky_scripts"
+version = "0.1.0"
+description = "Scripts for milky engine"
+readme = "../README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "python-chess>=1.999",
+]

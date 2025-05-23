@@ -3,7 +3,7 @@ use std::num::Wrapping;
 use milky_bitboard::{Move, Pieces, Side, Square};
 
 use crate::evaluate::{EvalContext, evaluate_position};
-use crate::moves::{MoveContext, MoveKind, generate_moves, make_move, sort_moves};
+use crate::moves::{MoveContext, MoveKind, SortContext, generate_moves, make_move, sort_moves};
 use crate::time_manager::{TimeManager, TimeManagerContext};
 use crate::transposition_table::{TTFlag, TranspositionTable};
 use crate::zobrist::Zobrist;
@@ -170,6 +170,7 @@ impl SearchState {
 
         let pv_node = beta.0 - alpha.0 > 1;
         let mut tt_flag = TTFlag::Alpha;
+        let mut best_move = Move::default();
 
         let score = ctx.transposition_table.get(
             ctx.zobrist.position,
@@ -177,6 +178,7 @@ impl SearchState {
             beta.0,
             depth,
             ctx.board.ply,
+            &mut best_move,
         );
 
         if let (Some(score), true, true) = (score, ctx.board.ply != 0, !pv_node) {
@@ -275,10 +277,11 @@ impl SearchState {
         }
 
         // Order moves by MVV-LVA score to improve pruning efficiency
-        sort_moves(&mut MoveContext {
+        sort_moves(&mut SortContext {
             zobrist: ctx.zobrist,
             board: ctx.board,
             search: self,
+            best_move,
         });
 
         let mut legal_moves = 0;
@@ -368,6 +371,8 @@ impl SearchState {
                 // since we found an exact score, update the flag used at the end
                 tt_flag = TTFlag::Exact;
 
+                best_move = piece_move;
+
                 // History heuristic
                 //
                 // Keep track of quiet moves that increases alpha by giving them a bonus based on
@@ -397,10 +402,11 @@ impl SearchState {
                 // This is a fail-hard alpha/beta search
                 if score >= beta {
                     ctx.transposition_table.set(
+                        best_move,
                         ctx.zobrist.position,
-                        depth,
                         beta.0,
                         TTFlag::Beta,
+                        depth,
                         ctx.board.ply,
                     );
 
@@ -425,8 +431,14 @@ impl SearchState {
             }
         }
 
-        ctx.transposition_table
-            .set(ctx.zobrist.position, depth, alpha.0, tt_flag, ctx.board.ply);
+        ctx.transposition_table.set(
+            best_move,
+            ctx.zobrist.position,
+            alpha.0,
+            tt_flag,
+            depth,
+            ctx.board.ply,
+        );
 
         alpha.0
     }
@@ -463,10 +475,11 @@ impl SearchState {
             search: self,
         });
 
-        sort_moves(&mut MoveContext {
+        sort_moves(&mut SortContext {
             zobrist: ctx.zobrist,
             board: ctx.board,
             search: self,
+            best_move: Move::default(),
         });
 
         for piece_move in self.moves.into_iter().take(self.move_count) {
