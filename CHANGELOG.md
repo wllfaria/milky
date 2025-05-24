@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.0] - 2025-05-24
+
+### Features
+
+- Move razoring tuned by black box with ax
+
 ## [0.2.0] - 2025-05-23
 
 ### Features
