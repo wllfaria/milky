@@ -5,5 +5,10 @@ description = "Scripts for milky engine"
 readme = "../README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "ax-platform>=1.0.0",
+    "numpy>=2.2.6",
     "python-chess>=1.999",
 ]
+
+[tool.pyright]
+reportMissingTypeStubs = false

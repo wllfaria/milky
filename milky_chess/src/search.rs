@@ -161,6 +161,8 @@ impl SearchState {
     ) -> i32 {
         const FULL_DEPTH_MOVES: i32 = 4;
         const REDUCTION_LIMIT: u8 = 3;
+        const RAZORING_LIMIT: u8 = 5;
+        const RAZORING_MARGIN: i32 = 1000;
 
         self.pv_length[ctx.board.ply] = ctx.board.ply;
 
@@ -222,6 +224,7 @@ impl SearchState {
         if depth < REDUCTION_LIMIT
             && !pv_node
             && !in_check
+            // prevent razoring on mate-in scores
             && i32::abs(beta.0 - 1) > -INFINITY + 100
         {
             let eval_margin = 120 * depth as i32;
@@ -230,6 +233,26 @@ impl SearchState {
             }
         }
 
+        // Razoring:
+        //
+        // If the current evaluation is so bad that we're unlikely to ever improve the position
+        // (raise alpha). We skip the search and do a simpler quiescence search, the reason for a
+        // relatively low depth for the cutoff is due to the fact that in shallower depths there
+        // are less chances of deep tactical moves happening, so if a score is bad, it probably
+        // means that the move is bad.
+        if depth < RAZORING_LIMIT
+            && !pv_node
+            && static_eval <= alpha.0 - RAZORING_MARGIN * depth as i32
+        {
+            return self.quiescence(ctx, alpha, beta, depth);
+        }
+
+        // Null move pruning:
+        //
+        // In almost every chess position, skipping a turn would be worse than the best legal move.
+        // Based on this, we give the opponent side an extra move, and if the score is still a
+        // fail-high (score > beta), we can be quite confident that the best move would also fail
+        // high. So we can simply return beta to prevent searching any further
         if depth >= REDUCTION_LIMIT && !in_check && ctx.board.ply != 0 {
             ctx.board.snapshot_board(ctx.zobrist);
 
